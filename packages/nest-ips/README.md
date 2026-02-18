@@ -2,20 +2,13 @@
 
 Application-level IDS/IPS for NestJS APIs.
 
-## Features
+## What It Does
 
-- Works with and without Redis (default: in-memory store).
-- Hard memory cap for persisted IPS data (default `500MB`).
-- Full HTTP pipeline support:
-  - `createIpsMiddleware()`
-  - `IpsGuard`
-  - `IpsInterceptor`
-  - `IpsNotFoundFilter`
-- Rule DSL (JSON) + route profiles (`default`, `public`, `login`, `admin`).
-- Behavior detectors (`401/403/404 spikes`, stuffing, burst).
-- Rate-limit headers (`Retry-After`, `RateLimit-*`, `X-RateLimit-*`).
-- Alerts: Slack webhook + SMTP email.
-- Privacy-aware alert payloads (no full body/headers by default).
+- Protects NestJS APIs with an IDS/IPS rule engine, not only a limiter.
+- Detects attack patterns (401/404/429 spikes, scans, abusive routes, suspicious UA).
+- Applies actions: `alert`, `rate-limit`, `ban`, `block`.
+- Supports multi-worker/shared state via Redis and local mode via memory store.
+- Sends security alerts to Slack and email with customizable templates.
 
 ## Install
 
@@ -23,10 +16,105 @@ Application-level IDS/IPS for NestJS APIs.
 npm i @nestjs-guardian/nest-ips
 ```
 
-## Support Development
+## Quick Start (Express/Nest)
 
-This package is maintained as an open-source security module for NestJS.
-Support ongoing development: https://buymeacoffee.com/vladyslavkhyrsa
+```ts
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import {
+  IpsModule,
+  IpsGuard,
+  IpsInterceptor,
+  IpsNotFoundFilter,
+  createIpsMiddleware,
+} from '@nestjs-guardian/nest-ips';
+
+@Module({
+  imports: [IpsModule.forRoot({})],
+  providers: [
+    { provide: APP_GUARD, useClass: IpsGuard },
+    { provide: APP_INTERCEPTOR, useClass: IpsInterceptor },
+    { provide: APP_FILTER, useClass: IpsNotFoundFilter },
+  ],
+})
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(createIpsMiddleware()).forRoutes('*');
+  }
+}
+```
+
+## How Client IP Is Determined (Trust Proxy Model)
+
+- `clientIp.mode: 'strict'` (recommended): trust headers only from trusted proxy.
+- Trusted proxy is set by `trustedProxyCidrs` and/or `isTrustedProxy(remoteIp)`.
+- `clientIp.mode: 'hops'`: use fixed number of proxy hops.
+- `headersPriority` controls which header is checked first.
+- `denyPrivateIpsFromHeaders: true` blocks private/local spoofed IPs from forwarded headers.
+
+## Rules Examples (401/404/429 + Path Rules)
+
+```ts
+IpsModule.forRoot({
+  profiles: {
+    default: {
+      behavior: { windowSec: 60, max401: 20, max404: 30, max429: 20 },
+    },
+  },
+  notFound: { windowSec: 60, max: 30 },
+});
+```
+
+```json
+[
+  {
+    "id": "block.admin.path",
+    "severity": "high",
+    "when": { "path": { "prefix": "/admin" } },
+    "match": [{ "field": "path", "contains": "/admin" }],
+    "action": "block",
+    "block": { "status": 403, "message": "Forbidden" }
+  }
+]
+```
+
+## Storage (Memory vs Redis)
+
+- `store.type: 'memory'` (default): fastest local mode, state is per-process/per-worker.
+- `store.type: 'redis'`: shared counters/bans across workers and instances.
+- `store.type: 'auto'`: try Redis first, fallback to memory on connection failure.
+
+```ts
+store: {
+  type: 'auto',
+  redis: { url: process.env.REDIS_URL },
+}
+```
+
+## Alerts (Slack/Email)
+
+- Slack: requires `alerts.slack.webhookUrl`.
+- Email: requires full `alerts.email.smtp` config.
+- If channel is configured but destination is missing, module throws startup error.
+- Supports templates and field-based rendering.
+
+## Security Notes (Direct Access, Spoofing)
+
+- If direct internet access to app is possible, do not trust forwarded headers from unknown sources.
+- In strict mode, configure trusted proxy CIDRs or trust function correctly.
+- Wrong proxy trust setup can lead to wrong client attribution and weaker bans.
+- In multi-worker production, prefer Redis store for consistent behavior.
+
+## Configuration Reference
+
+- Minimal/default config: `IpsModule.forRoot({})`
+- Full options and defaults: see sections below (`npm Usage Guide`, `Top-level options reference`, `Client IP Trust Model`, `Spikes And Actions`, `Alert Templates`).
+
+## Funding
+
+Support development:
+- BuyMeACoffee: https://buymeacoffee.com/vladyslavkhyrsa
+- GitHub Sponsors: https://github.com/sponsors/HirsaVladislav
 
 ## npm Usage Guide
 
