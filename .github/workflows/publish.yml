@@ -22,13 +22,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org
 
       - name: Install dependencies
         run: npm ci
 
       - name: Build package
         run: npm run build
+
+      - name: Enforce OIDC trusted publishing mode
+        run: |
+          npm config delete //registry.npmjs.org/:_authToken || true
 
       - name: Publish @nestjs-guardian/nest-ips
         run: npm publish -w @nestjs-guardian/nest-ips --access public --provenance
