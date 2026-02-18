@@ -1,0 +1,12 @@
+{
+  "name": "nestjs-guardian-ips",
+  "private": true,
+  "version": "0.0.1",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run -w @nestjs-guardian/nest-ips build",
+    "typecheck": "npm run -w @nestjs-guardian/nest-ips typecheck"
+  }
+}

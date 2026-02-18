@@ -1,0 +1,52 @@
+import { IpsModuleOptions, IpsProfileName, IpsResolvedOptions } from './options';
+import { IpsHttpContext } from '../http/context';
+export interface RuntimeDecision {
+    blocked: boolean;
+    status: number;
+    message: string;
+    headers?: Record<string, string>;
+}
+export declare class IpsRuntime {
+    private readonly logger;
+    private readonly options;
+    private readonly store;
+    private readonly ruleEngine;
+    private readonly decisionEngine;
+    private readonly behavior;
+    private readonly throttle;
+    private readonly alerter;
+    constructor(input?: IpsModuleOptions);
+    getOptions(): IpsResolvedOptions;
+    startup(): Promise<void>;
+    shutdown(): Promise<void>;
+    getRateLimitHeaders(req: Record<string, unknown>): Record<string, string> | null;
+    contextFor(req: Record<string, unknown>, profileOverride?: IpsProfileName): IpsHttpContext;
+    middlewareCheck(req: Record<string, unknown>): Promise<RuntimeDecision | null>;
+    guardCheck(req: Record<string, unknown>, profileOverride: IpsProfileName | undefined, bypass: boolean, tags?: string[]): Promise<RuntimeDecision | null>;
+    onBeforeHandler(req: Record<string, unknown>): Promise<void>;
+    onError(req: Record<string, unknown>, status: number): Promise<void>;
+    onRouteNotFound(req: Record<string, unknown>): Promise<void>;
+    private applyRules;
+    private evaluateRule;
+    private reactToSignals;
+    private react;
+    private sendAlert;
+    private enforceRateLimit;
+    private buildRateLimitHeaders;
+    private checkCidrs;
+    private ipInCidr;
+    private isBanned;
+    private banIp;
+    private banKey;
+    private defaultAlertThrottleSec;
+    private resolveStore;
+    private resolveAlerter;
+    private isStore;
+    private printRedError;
+    private logDetection;
+    private extractEmail;
+    private extractUserId;
+    private extractUsername;
+    private toRecord;
+    private normalizeString;
+}

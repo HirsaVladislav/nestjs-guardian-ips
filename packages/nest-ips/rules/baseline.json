@@ -1,0 +1,50 @@
+[
+  {
+    "id": "baseline.path.secrets",
+    "enabled": true,
+    "severity": "high",
+    "normalize": ["lowercase", "urlDecode", "normalizePath"],
+    "match": [
+      { "field": "path", "contains": "/.env" }
+    ],
+    "action": "block",
+    "block": { "status": 403, "message": "Forbidden" },
+    "alert": { "throttleSec": 120 }
+  },
+  {
+    "id": "baseline.path.git",
+    "enabled": true,
+    "severity": "high",
+    "normalize": ["lowercase", "urlDecode", "normalizePath"],
+    "match": [
+      { "field": "path", "contains": "/.git" }
+    ],
+    "action": "block",
+    "block": { "status": 403, "message": "Forbidden" },
+    "alert": { "throttleSec": 120 }
+  },
+  {
+    "id": "baseline.ua.scanners",
+    "enabled": true,
+    "severity": "medium",
+    "match": [
+      { "field": "ua", "regex": "(sqlmap|nikto|nmap|dirbuster|acunetix)" }
+    ],
+    "score": 25,
+    "action": "alert",
+    "alert": { "throttleSec": 180 }
+  },
+  {
+    "id": "baseline.query.sql-injection",
+    "enabled": true,
+    "severity": "critical",
+    "normalize": ["lowercase", "urlDecode"],
+    "match": [
+      { "field": "query", "key": "q", "regex": "(union\\s+select|or\\s+1=1|drop\\s+table)" }
+    ],
+    "score": 70,
+    "action": "ban",
+    "ban": { "ttlSec": 1800 },
+    "alert": { "throttleSec": 120 }
+  }
+]

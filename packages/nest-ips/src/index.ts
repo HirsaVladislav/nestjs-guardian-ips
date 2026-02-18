@@ -1,0 +1,24 @@
+export { IpsModule } from './module/ips.module';
+export { IpsGuard } from './http/ips.guard';
+export { IpsInterceptor } from './http/ips.interceptor';
+export { IpsNotFoundFilter } from './http/ips.notfound.filter';
+export { createIpsMiddleware } from './http/ips.middleware';
+
+export { IpsProfile, IpsBypass, IpsTags } from './module/decorators';
+
+export type {
+  IpsModuleOptions,
+  IpsClientIpOptions,
+  IpsResolvedClientIpOptions,
+  Rule,
+  RuleAction,
+  IpsProfileName,
+  IpsResolvedOptions,
+} from './module/options';
+
+export type { AlertEvent, AlertIncludeField, Alerter, AlertTemplateField } from './alerts/alerter.interface';
+export type { Store } from './store/store.interface';
+export type { LoggerPort } from './utils/logger.interface';
+
+export { MemoryStore } from './store/memory.store';
+export { RedisStore } from './store/redis.store';
