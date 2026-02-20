@@ -144,7 +144,7 @@ export interface IpsRulesOptions {
 }
 export interface IpsClientIpOptions {
     mode?: ClientIpMode;
-    trustedProxyCidrs?: string[];
+    trustedProxyCidrs?: string | string[];
     isTrustedProxy?: (remoteIp: string) => boolean;
     hops?: number;
     headersPriority?: string[];

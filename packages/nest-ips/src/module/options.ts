@@ -142,7 +142,7 @@ export interface IpsRulesOptions {
 
 export interface IpsClientIpOptions {
   mode?: ClientIpMode;
-  trustedProxyCidrs?: string[];
+  trustedProxyCidrs?: string | string[];
   isTrustedProxy?: (remoteIp: string) => boolean;
   hops?: number;
   headersPriority?: string[];
@@ -361,12 +361,16 @@ function normalizeHeaderList(headers: string[] | undefined): string[] {
   return Array.from(unique);
 }
 
-function normalizeCidrs(cidrs: string[] | undefined): string[] {
-  if (!cidrs || cidrs.length === 0) {
+function normalizeCidrs(cidrs: string | string[] | undefined): string[] {
+  if (!cidrs) {
     return [];
   }
 
-  return cidrs.map((cidr) => cidr.trim()).filter((cidr) => Boolean(cidr));
+  const values = Array.isArray(cidrs) ? cidrs : [cidrs];
+  return values
+    .flatMap((value) => value.split(','))
+    .map((cidr) => cidr.trim())
+    .filter((cidr) => Boolean(cidr));
 }
 
 function normalizeHops(value: number | undefined): number {

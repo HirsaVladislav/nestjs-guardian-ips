@@ -150,10 +150,14 @@ function normalizeHeaderList(headers) {
     return Array.from(unique);
 }
 function normalizeCidrs(cidrs) {
-    if (!cidrs || cidrs.length === 0) {
+    if (!cidrs) {
         return [];
     }
-    return cidrs.map((cidr) => cidr.trim()).filter((cidr) => Boolean(cidr));
+    const values = Array.isArray(cidrs) ? cidrs : [cidrs];
+    return values
+        .flatMap((value) => value.split(','))
+        .map((cidr) => cidr.trim())
+        .filter((cidr) => Boolean(cidr));
 }
 function normalizeHops(value) {
     if (typeof value !== 'number' || !Number.isFinite(value)) {

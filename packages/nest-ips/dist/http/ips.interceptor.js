@@ -14,16 +14,23 @@ var __param = (this && this.__param) || function (paramIndex, decorator) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IpsInterceptor = void 0;
 const common_1 = require("@nestjs/common");
+const core_1 = require("@nestjs/core");
 const rxjs_1 = require("rxjs");
 const operators_1 = require("rxjs/operators");
+const decorators_1 = require("../module/decorators");
 const runtime_1 = require("../module/runtime");
 const runtime_registry_1 = require("../module/runtime.registry");
 let IpsInterceptor = class IpsInterceptor {
-    constructor(runtime) {
+    constructor(runtime, reflector) {
         this.runtime = runtime;
+        this.reflector = reflector;
     }
     async intercept(context, next) {
         if (context.getType() !== 'http') {
+            return next.handle();
+        }
+        const bypass = this.reflector?.getAllAndOverride(decorators_1.IPS_BYPASS_KEY, [context.getHandler(), context.getClass()]) ?? false;
+        if (bypass) {
             return next.handle();
         }
         const req = context.switchToHttp().getRequest();
@@ -44,7 +51,9 @@ exports.IpsInterceptor = IpsInterceptor;
 exports.IpsInterceptor = IpsInterceptor = __decorate([
     (0, common_1.Injectable)(),
     __param(0, (0, common_1.Optional)()),
-    __metadata("design:paramtypes", [runtime_1.IpsRuntime])
+    __param(1, (0, common_1.Optional)()),
+    __metadata("design:paramtypes", [runtime_1.IpsRuntime,
+        core_1.Reflector])
 ], IpsInterceptor);
 function extractStatus(error) {
     if (!error || typeof error !== 'object') {
