@@ -46,11 +46,11 @@ export class AppModule implements NestModule {
 
 ## How Client IP Is Determined (Trust Proxy Model)
 
-- `clientIp.mode: 'strict'` (recommended): trust headers only from trusted proxy.
-- Trusted proxy is set by `trustedProxyCidrs` and/or `isTrustedProxy(remoteIp)`.
-- `clientIp.mode: 'hops'`: use fixed number of proxy hops.
-- `headersPriority` controls which header is checked first.
-- `denyPrivateIpsFromHeaders: true` blocks private/local spoofed IPs from forwarded headers.
+- `clientIp.mode: 'strict'`: trust forwarded headers only from trusted proxies.
+- `clientIp.mode: 'hops'`: resolve client IP by fixed proxy hop count.
+- `headersPriority` controls header parsing order.
+- `denyPrivateIpsFromHeaders` can reject private/local forwarded IPs.
+- See `Client IP Trust Model` below for detailed behavior and examples.
 
 ## Rules Examples (401/404/429 + Path Rules)
 
@@ -452,6 +452,116 @@ export class AppController {
   panel() {}
 }
 ```
+
+### `@IpsBypass()`
+
+What problem it solves:
+
+- Excludes a route/class from IPS guard/interceptor observation (for example `/health`, probes, internal callbacks).
+
+Example:
+
+```ts
+@IpsBypass()
+@Get('/health')
+health() {
+  return { ok: true };
+}
+```
+
+What it is for:
+
+- Skips guard-level IPS checks and interceptor tracking for the route.
+- For full route exclusion (including middleware), see `Excluding Routes From IPS Observation` below.
+
+### `@IpsProfile('default' | 'public' | 'login' | 'admin')`
+
+What problem it solves:
+
+- Assigns a route/class to a specific IPS profile with its own limits and behavior thresholds.
+
+Example:
+
+```ts
+@IpsProfile('login')
+@Post('/auth/login')
+login() {}
+```
+
+What it is for:
+
+- Use stricter anti-bruteforce/stuffing settings for auth routes.
+- Use stronger controls for sensitive routes (for example `admin`).
+
+### `@IpsTags(...tags)`
+
+What problem it solves:
+
+- Adds route/class tags into IPS context for rule matching, logs, and alert triage.
+
+Example:
+
+```ts
+@IpsTags('payments', 'public-api')
+@Get('/payments/status')
+status() {}
+```
+
+What it is for:
+
+- Group detections by feature/domain.
+- Add context for alerts and rule decisions.
+
+## Excluding Routes From IPS Observation (Example: `/health`)
+
+For health-check routes (ALB/ELB, uptime probes), use both:
+
+1. middleware `exclude(...)` to skip `createIpsMiddleware()`
+2. `@IpsBypass()` to skip IPS guard/interceptor checks
+
+Why both are required:
+
+- `exclude(...)` disables only middleware checks (global rate-limit, cheap signatures, early block).
+- `@IpsBypass()` disables IPS checks on handler/class level (guard/interceptor path).
+- Using only one of them can still leave the route counted or blocked at another IPS stage.
+
+### 1) Exclude from IPS middleware
+
+```ts
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
+import { createIpsMiddleware } from '@nestjs-guardian/nest-ips';
+
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer
+      .apply(createIpsMiddleware())
+      .exclude({ path: 'health', method: RequestMethod.GET })
+      .forRoutes('*');
+  }
+}
+```
+
+### 2) Add `@IpsBypass()` to the route
+
+```ts
+import { Controller, Get } from '@nestjs/common';
+import { IpsBypass } from '@nestjs-guardian/nest-ips';
+
+@Controller()
+export class AppController {
+  @IpsBypass()
+  @Get('/health')
+  health() {
+    return { ok: true };
+  }
+}
+```
+
+### Notes
+
+- Check the exact path in `exclude(...)` (including global prefix, e.g. `/api/health`).
+- Keep `/health` lightweight (no heavy DB/external calls).
+- Protect public `/health` at ALB/WAF/security-group level rather than app-level IPS limits.
 
 ## Client IP Trust Model
 
