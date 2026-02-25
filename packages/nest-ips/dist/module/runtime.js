@@ -305,7 +305,16 @@ class IpsRuntime {
                 const ttl = policy.banTtlSec ?? this.options.profiles.default.banTtlSec ?? 600;
                 await this.banIp(ctx.ip, ttl, signal.message);
             }
-            await this.sendAlert(this.decisionEngine.alertEvent(ctx, this.options.mode === 'IPS' ? 'ban' : 'alert', signal.message, {
+            const signalAction = this.options.mode === 'IPS' ? 'ban' : 'alert';
+            const suppressImmediate = this.collectAlertReport(ctx, {
+                source: 'behavior',
+                action: signalAction,
+                ruleId: signal.id,
+            });
+            if (suppressImmediate) {
+                continue;
+            }
+            await this.sendAlert(this.decisionEngine.alertEvent(ctx, signalAction, signal.message, {
                 ruleId: signal.id,
                 severity: signal.severity,
                 counts: signal.counts,
@@ -325,7 +334,11 @@ class IpsRuntime {
             message: decision.message,
             counts: decision.counts,
         });
-        const suppressImmediate = this.collectRateLimitReport(ctx, decision, ruleId);
+        const suppressImmediate = this.collectAlertReport(ctx, {
+            source: 'decision',
+            action: decision.action,
+            ruleId,
+        });
         if (suppressImmediate) {
             return;
         }
@@ -454,12 +467,17 @@ class IpsRuntime {
         }, periodMs);
         this.rateLimitReportTimer.unref?.();
     }
-    collectRateLimitReport(ctx, decision, ruleId) {
+    collectAlertReport(ctx, input) {
         const config = this.rateLimitReportConfig();
-        if (!config?.enabled || !this.alerter || decision.action !== 'rateLimit') {
+        if (!config?.enabled || !this.alerter) {
             return false;
         }
-        const key = `${ruleId}|${ctx.ip}|${ctx.method}|${ctx.path}|${ctx.profile}`;
+        const include = config.scope === 'all' ||
+            (config.scope === 'rateLimit' && input.source === 'decision' && input.action === 'rateLimit');
+        if (!include) {
+            return false;
+        }
+        const key = `${input.source}|${input.action}|${input.ruleId}|${ctx.ip}|${ctx.method}|${ctx.path}|${ctx.profile}`;
         const current = this.rateLimitReportRows.get(key);
         if (current) {
             current.count += 1;
@@ -477,7 +495,9 @@ class IpsRuntime {
                 }
             }
             this.rateLimitReportRows.set(key, {
-                ruleId,
+                source: input.source,
+                action: input.action,
+                ruleId: input.ruleId,
                 ip: ctx.ip,
                 method: ctx.method,
                 path: ctx.path,
@@ -510,18 +530,21 @@ class IpsRuntime {
             const omitted = Math.max(0, this.rateLimitReportRows.size - rows.length);
             const windowStartedAt = this.rateLimitReportWindowStartedAtMs;
             const periodSec = config.periodSec;
-            const lines = rows.map((row, index) => `${index + 1}. count=${row.count} ip=${row.ip} ${row.method} ${row.path} rule=${row.ruleId} profile=${row.profile}`);
+            const lines = rows.map((row, index) => `${index + 1}. count=${row.count} source=${row.source} action=${row.action} ip=${row.ip} ${row.method} ${row.path} rule=${row.ruleId} profile=${row.profile}`);
             if (omitted > 0) {
                 lines.push(`... omitted ${omitted} more groups`);
             }
             if (this.rateLimitReportEvictedGroups > 0) {
                 lines.push(`... evicted oldest groups due to maxGroups=${config.maxGroups}: groups=${this.rateLimitReportEvictedGroups}, events=${this.rateLimitReportEvictedEvents}`);
             }
+            const summaryRuleId = config.scope === 'all' ? 'ips-summary' : 'rateLimit-summary';
+            const summaryTitle = config.scope === 'all' ? 'IPS alert summary' : 'Rate-limit summary';
             const message = [
-                `Rate-limit summary (${trigger})`,
+                `${summaryTitle} (${trigger})`,
                 `windowStart=${new Date(windowStartedAt).toISOString()}`,
                 `windowEnd=${new Date(now).toISOString()}`,
                 `periodSec=${periodSec}`,
+                `scope=${config.scope}`,
                 `totalEvents=${this.rateLimitReportTotal}`,
                 `uniqueGroups=${this.rateLimitReportRows.size}`,
                 ...lines,
@@ -534,7 +557,7 @@ class IpsRuntime {
                 method: 'MULTI',
                 path: '*',
                 profile: 'summary',
-                ruleId: 'rateLimit-summary',
+                ruleId: summaryRuleId,
                 severity: 'medium',
                 counts: {
                     rateLimitEvents: this.rateLimitReportTotal,
@@ -553,6 +576,7 @@ class IpsRuntime {
                 evictedGroups: this.rateLimitReportEvictedGroups,
                 evictedEvents: this.rateLimitReportEvictedEvents,
                 periodSec,
+                scope: config.scope,
                 maxGroups: config.maxGroups,
             });
         }

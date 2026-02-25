@@ -102,18 +102,18 @@ store: {
 
 ## Rate-Limit Summary Reports (`alerts.rateLimitReport`)
 
-Use this feature to reduce alert spam from repeated `429` / `rateLimit` decisions.
+Use this feature to reduce alert spam from repeated IPS alerts.
 
 What it does:
 
-- Collects `rateLimit` events in memory.
+- Collects repeated IPS alert events in memory (scope is configurable).
 - Groups identical events by `ruleId + ip + method + path + profile`.
 - Sends one periodic summary alert (Slack/Email) instead of many repeated alerts.
-- Can optionally suppress immediate `rateLimit` alerts.
+- Can optionally suppress immediate alerts for included events.
 
 What it does not change:
 
-- `ban`, `block`, and behavior spike alerts (`spike.401`, `spike.404`, `spike.429`, `burst`, etc.) are still sent normally.
+- Events outside selected `scope` are still sent normally.
 
 Notes:
 
@@ -134,6 +134,7 @@ IpsModule.forRoot({
     },
     rateLimitReport: {
       // enabled: true, // optional (default when object is present)
+      // scope: 'rateLimit', // default; use 'all' to aggregate behavior signals and other IPS alerts too
       period: '30m',
       suppressImmediate: true, // set false for hybrid mode
       maxItems: 50,
@@ -146,16 +147,37 @@ IpsModule.forRoot({
 How `suppressImmediate` works:
 
 - `suppressImmediate: true` -> summary-only mode (recommended for noisy production APIs)
-  - `rateLimit` alerts are collected and sent only in periodic reports (`period`)
-  - immediate `rateLimit` alerts are suppressed
+  - included alerts (based on `scope`) are collected and sent only in periodic reports (`period`)
+  - immediate alerts for included events are suppressed
 - `suppressImmediate: false` -> hybrid mode (immediate alerts + periodic summary)
-  - immediate `rateLimit` alerts are still sent
+  - immediate alerts are still sent
   - the same events are also aggregated into periodic reports
 
 Important:
 
-- This flag affects only `rateLimit` alerts.
-- `ban`, `block`, `spike.*`, `burst`, and other non-`rateLimit` alerts are still sent immediately.
+- This flag affects only events included by `rateLimitReport.scope`.
+- To aggregate all IPS alert-producing events (including behavior signals like `route-not-found`), set `scope: 'all'`.
+
+### Aggregation scope (`scope`)
+
+- `scope: 'rateLimit'` (default)
+  - aggregates only `rateLimit` decisions
+- `scope: 'all'`
+  - aggregates all alert-producing IPS events handled by runtime:
+  - `rateLimit` decisions
+  - behavior signals (`route-not-found`, `spike.401`, `spike.404`, `spike.429`, `burst`, `stuffing`)
+  - rule/block/ban/admin-cidr/cheap-signature alerts
+
+Example (`scope: 'all'` for 404 scans / route-not-found floods):
+
+```ts
+rateLimitReport: {
+  enabled: true,
+  scope: 'all',
+  period: '30m',
+  suppressImmediate: true,
+}
+```
 
 ### `period` format
 
@@ -382,6 +404,7 @@ Required fields:
 
 Optional fields:
 - `alerts.rateLimitReport.enabled`
+- `alerts.rateLimitReport.scope`
 - `alerts.rateLimitReport.period`
 - `alerts.rateLimitReport.suppressImmediate`
 - `alerts.rateLimitReport.maxItems`
@@ -389,6 +412,7 @@ Optional fields:
 
 Defaults (when enabled):
 - `enabled: true` (when `alerts.rateLimitReport` object exists)
+- `scope: 'rateLimit'`
 - `period: 1800` seconds (`30m`)
 - `suppressImmediate: true`
 - `maxItems: 50`
@@ -402,6 +426,7 @@ IpsModule.forRoot({
     },
     rateLimitReport: {
       enabled: true,
+      scope: 'rateLimit',
       period: '30m',
       suppressImmediate: true,
       maxItems: 50,
@@ -536,6 +561,7 @@ import {
         // Optional periodic summary for repeated rate-limit alerts (429 spam reduction)
         // rateLimitReport: {
         //   enabled: true, // optional if rateLimitReport object is present
+        //   scope: 'all', // optional; aggregate all IPS alerts (not only rateLimit)
         //   period: '30m',
         //   suppressImmediate: true,
         //   maxItems: 50,

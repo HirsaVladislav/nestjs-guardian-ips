@@ -60,7 +60,7 @@ export declare class IpsRuntime {
     private banKey;
     private defaultAlertThrottleSec;
     private startRateLimitReportTimer;
-    private collectRateLimitReport;
+    private collectAlertReport;
     private flushRateLimitReport;
     private resetRateLimitReportWindow;
     private rateLimitReportConfig;

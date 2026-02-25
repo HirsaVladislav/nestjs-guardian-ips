@@ -129,11 +129,13 @@ function resolveRateLimitReportOptions(input) {
         return undefined;
     }
     const enabled = input.enabled ?? true;
+    const scope = input.scope === 'all' ? 'all' : 'rateLimit';
     const periodSec = normalizeDurationSec(input.period, 1800);
     const maxItems = normalizePositiveInt(input.maxItems, 50);
     const maxGroups = normalizePositiveInt(input.maxGroups, 2000);
     return {
         enabled,
+        scope,
         suppressImmediate: input.suppressImmediate ?? true,
         maxItems,
         maxGroups,

@@ -139,13 +139,19 @@ export interface IpsRateLimitReportOptions {
      */
     enabled?: boolean;
     /**
+     * Aggregation scope:
+     * - `rateLimit` (default): aggregate only `rateLimit` decisions
+     * - `all`: aggregate all alert-producing IPS events (rate-limit, behavior signals, block/ban/alert decisions)
+     */
+    scope?: 'rateLimit' | 'all';
+    /**
      * Report period. Supports seconds (`30`), or duration strings like `30m`, `1h`, `1d`.
      * Invalid values fall back to 30 minutes.
      */
     period?: number | string;
     /**
-     * If `true`, suppresses immediate `rateLimit` alerts and sends only periodic summaries.
-     * Does not affect `ban`, `block`, or behavior spike alerts.
+     * If `true`, suppresses immediate alerts for events included by `scope` and sends only periodic summaries.
+     * Events not included by `scope` are unaffected.
      */
     suppressImmediate?: boolean;
     /**
@@ -161,6 +167,7 @@ export interface IpsRateLimitReportOptions {
 /** Normalized internal rate-limit report configuration. */
 export interface IpsResolvedRateLimitReportOptions {
     enabled: boolean;
+    scope: 'rateLimit' | 'all';
     periodSec: number;
     suppressImmediate: boolean;
     maxItems: number;
