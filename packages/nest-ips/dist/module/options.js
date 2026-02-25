@@ -128,7 +128,7 @@ function resolveRateLimitReportOptions(input) {
     if (!input) {
         return undefined;
     }
-    const enabled = input.collect ?? input.enabled ?? false;
+    const enabled = input.enabled ?? true;
     const periodSec = normalizeDurationSec(input.period, 1800);
     const maxItems = normalizePositiveInt(input.maxItems, 50);
     const maxGroups = normalizePositiveInt(input.maxGroups, 2000);

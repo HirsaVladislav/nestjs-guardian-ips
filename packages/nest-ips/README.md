@@ -118,6 +118,7 @@ What it does not change:
 Notes:
 
 - If `alerts.rateLimitReport` is omitted, this feature is disabled (default behavior remains unchanged).
+- If `alerts.rateLimitReport` is provided and `enabled` is omitted, summary reporting is enabled by default.
 - Summary sending requires at least one configured alert channel (`alerts.slack` and/or `alerts.email`).
 - Aggregation is per-process (each app instance/worker sends its own summary).
 
@@ -132,7 +133,7 @@ IpsModule.forRoot({
       webhookUrl: process.env.SLACK_WEBHOOK_URL!,
     },
     rateLimitReport: {
-      collect: true,
+      // enabled: true, // optional (default when object is present)
       period: '30m',
       suppressImmediate: true, // set false for hybrid mode
       maxItems: 50,
@@ -377,17 +378,17 @@ IpsModule.forRoot({
 ### Example 6: Periodic rate-limit summary reports
 
 Required fields:
-- none (feature is disabled unless `alerts.rateLimitReport` is configured with `collect: true` or `enabled: true`).
+- none (feature is disabled unless `alerts.rateLimitReport` is configured and `enabled` is not set to `false`).
 
 Optional fields:
-- `alerts.rateLimitReport.collect`
-- `alerts.rateLimitReport.enabled` (alias of `collect`)
+- `alerts.rateLimitReport.enabled`
 - `alerts.rateLimitReport.period`
 - `alerts.rateLimitReport.suppressImmediate`
 - `alerts.rateLimitReport.maxItems`
 - `alerts.rateLimitReport.maxGroups`
 
 Defaults (when enabled):
+- `enabled: true` (when `alerts.rateLimitReport` object exists)
 - `period: 1800` seconds (`30m`)
 - `suppressImmediate: true`
 - `maxItems: 50`
@@ -400,7 +401,7 @@ IpsModule.forRoot({
       webhookUrl: process.env.SLACK_WEBHOOK_URL!,
     },
     rateLimitReport: {
-      collect: true,
+      enabled: true,
       period: '30m',
       suppressImmediate: true,
       maxItems: 50,
@@ -534,7 +535,7 @@ import {
         },
         // Optional periodic summary for repeated rate-limit alerts (429 spam reduction)
         // rateLimitReport: {
-        //   collect: true,
+        //   enabled: true, // optional if rateLimitReport object is present
         //   period: '30m',
         //   suppressImmediate: true,
         //   maxItems: 50,

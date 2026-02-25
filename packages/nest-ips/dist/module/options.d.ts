@@ -134,15 +134,10 @@ export interface EmailAlertOptions {
 /** Periodic rate-limit summary report configuration. */
 export interface IpsRateLimitReportOptions {
     /**
-     * Enables periodic rate-limit summary reports.
-     * Alias of `collect` for readability.
+     * Enables periodic rate-limit summary collection and sending.
+     * If omitted, defaults to `true` when `rateLimitReport` object is provided.
      */
     enabled?: boolean;
-    /**
-     * Enables periodic rate-limit summary collection and sending.
-     * If omitted, defaults to `false`.
-     */
-    collect?: boolean;
     /**
      * Report period. Supports seconds (`30`), or duration strings like `30m`, `1h`, `1d`.
      * Invalid values fall back to 30 minutes.
