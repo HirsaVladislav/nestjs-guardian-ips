@@ -4,7 +4,7 @@ export { IpsInterceptor } from './http/ips.interceptor';
 export { IpsNotFoundFilter } from './http/ips.notfound.filter';
 export { createIpsMiddleware } from './http/ips.middleware';
 export { IpsProfile, IpsBypass, IpsTags } from './module/decorators';
-export type { IpsModuleOptions, IpsClientIpOptions, IpsResolvedClientIpOptions, Rule, RuleAction, IpsProfileName, IpsResolvedOptions, } from './module/options';
+export type { IpsMode, ClientIpMode, RateLimitKey, IpsModuleOptions, IpsAlertsOptions, IpsResolvedAlertsOptions, SlackAlertOptions, EmailAlertOptions, IpsPrivacyOptions, IpsStoreOptions, IpsRedisOptions, IpsRulesOptions, IpsClientIpOptions, IpsResolvedClientIpOptions, RateLimitPolicy, BehaviorPolicy, ProfilePolicy, IpsProfiles, IpsRateLimitReportOptions, IpsResolvedRateLimitReportOptions, PathCondition, Rule, RuleAction, IpsProfileName, IpsResolvedOptions, } from './module/options';
 export type { AlertEvent, AlertIncludeField, Alerter, AlertTemplateField } from './alerts/alerter.interface';
 export type { Store } from './store/store.interface';
 export type { LoggerPort } from './utils/logger.interface';

@@ -14,12 +14,14 @@ import { getIpsRuntime } from '../module/runtime.registry';
 import { applyHeaders } from './headers';
 
 @Injectable()
+/** Global/class/route guard that executes profile checks, CIDR policy, rules and profile rate limits. */
 export class IpsGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     @Optional() private readonly runtime?: IpsRuntime,
   ) {}
 
+  /** Runs guard-level IPS checks for HTTP requests and throws Nest HTTP exceptions on block decisions. */
   async canActivate(context: ExecutionContext): Promise<boolean> {
     if (context.getType() !== 'http') {
       return true;

@@ -25,6 +25,7 @@ let IpsInterceptor = class IpsInterceptor {
         this.runtime = runtime;
         this.reflector = reflector;
     }
+    /** Tracks request start and error status for HTTP requests unless route is marked with `@IpsBypass()`. */
     async intercept(context, next) {
         if (context.getType() !== 'http') {
             return next.handle();
@@ -49,7 +50,9 @@ let IpsInterceptor = class IpsInterceptor {
 };
 exports.IpsInterceptor = IpsInterceptor;
 exports.IpsInterceptor = IpsInterceptor = __decorate([
-    (0, common_1.Injectable)(),
+    (0, common_1.Injectable)()
+    /** Interceptor that records request/response outcomes for behavior detectors (burst, 401/404/429 spikes). */
+    ,
     __param(0, (0, common_1.Optional)()),
     __param(1, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [runtime_1.IpsRuntime,

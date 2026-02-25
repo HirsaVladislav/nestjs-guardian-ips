@@ -4,6 +4,7 @@ exports.matchesWhen = matchesWhen;
 exports.matchesAll = matchesAll;
 const ip_1 = require("../utils/ip");
 const normalize_1 = require("./normalize");
+/** Evaluates `rule.when` preconditions (method/profile/path gates). */
 function matchesWhen(rule, ctx) {
     if (!rule.when) {
         return true;
@@ -32,6 +33,7 @@ function matchesWhen(rule, ctx) {
     }
     return true;
 }
+/** Evaluates all `rule.match` clauses against the request context. */
 function matchesAll(rule, ctx) {
     const path = (0, normalize_1.applyNormalization)(ctx.path, rule.normalize);
     const ua = (0, normalize_1.applyNormalization)(ctx.ua, rule.normalize);

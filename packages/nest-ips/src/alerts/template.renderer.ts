@@ -20,6 +20,7 @@ const FIELD_LABELS: Record<AlertTemplateField, string> = {
   message: 'message',
 };
 
+/** Renders a string template by replacing `{{token}}` placeholders from `AlertEvent`. */
 export function renderAlertTemplate(template: string, event: AlertEvent): string {
   if (!template) {
     return '';
@@ -31,6 +32,7 @@ export function renderAlertTemplate(template: string, event: AlertEvent): string
   });
 }
 
+/** Recursively renders template placeholders inside strings/arrays/objects. */
 export function renderAlertTemplateValue<T>(value: T, event: AlertEvent): T {
   if (typeof value === 'string') {
     return renderAlertTemplate(value, event) as T;
@@ -51,6 +53,7 @@ export function renderAlertTemplateValue<T>(value: T, event: AlertEvent): T {
   return output as T;
 }
 
+/** Renders selected alert fields as human-readable lines. */
 export function renderAlertFields(event: AlertEvent, fields: AlertTemplateField[], separator = '\n'): string {
   return fields
     .map((field) => {

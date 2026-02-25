@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.SlackWebhookAlerter = void 0;
 const node_https_1 = require("node:https");
 const template_renderer_1 = require("./template.renderer");
+const DEFAULT_SLACK_TIMEOUT_MS = 5000;
 const DEFAULT_SLACK_FIELDS = [
     'actionUpper',
     'mode',
@@ -13,6 +14,7 @@ const DEFAULT_SLACK_FIELDS = [
     'severity',
     'message',
 ];
+/** Slack webhook alerter with text or payload-template rendering support. */
 class SlackWebhookAlerter {
     constructor(config) {
         if (typeof config === 'string') {
@@ -27,6 +29,7 @@ class SlackWebhookAlerter {
         this.payloadTemplate = config.payloadTemplate;
         this.payloadIncludeText = config.payloadIncludeText ?? true;
     }
+    /** Sends alert event to Slack Incoming Webhook endpoint. */
     async send(event) {
         if (!this.webhookUrl) {
             return;
@@ -46,6 +49,7 @@ class SlackWebhookAlerter {
                     'content-length': Buffer.byteLength(body),
                 },
             }, (res) => {
+                res.resume();
                 const status = res.statusCode ?? 500;
                 if (status >= 200 && status < 300) {
                     resolve();
@@ -54,6 +58,9 @@ class SlackWebhookAlerter {
                 reject(new Error(`Slack webhook failed with status ${status}`));
             });
             req.on('error', reject);
+            req.setTimeout(DEFAULT_SLACK_TIMEOUT_MS, () => {
+                req.destroy(new Error(`Slack webhook timed out after ${DEFAULT_SLACK_TIMEOUT_MS}ms`));
+            });
             req.write(body);
             req.end();
         });

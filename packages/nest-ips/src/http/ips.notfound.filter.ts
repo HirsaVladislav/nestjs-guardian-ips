@@ -4,9 +4,11 @@ import { getIpsRuntime } from '../module/runtime.registry';
 import { applyHeaders } from './headers';
 
 @Catch(NotFoundException)
+/** Optional filter that reports route-not-found spikes to IPS behavior detectors. */
 export class IpsNotFoundFilter implements ExceptionFilter {
   constructor(@Optional() private readonly runtime?: IpsRuntime) {}
 
+  /** For HTTP 404s without a matched route, records behavior signal and preserves JSON response semantics. */
   catch(exception: NotFoundException, host: ArgumentsHost): void {
     if (host.getType() !== 'http') {
       throw exception;

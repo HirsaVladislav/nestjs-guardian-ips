@@ -21,6 +21,7 @@ let IpsNotFoundFilter = class IpsNotFoundFilter {
     constructor(runtime) {
         this.runtime = runtime;
     }
+    /** For HTTP 404s without a matched route, records behavior signal and preserves JSON response semantics. */
     catch(exception, host) {
         if (host.getType() !== 'http') {
             throw exception;
@@ -63,7 +64,9 @@ let IpsNotFoundFilter = class IpsNotFoundFilter {
 };
 exports.IpsNotFoundFilter = IpsNotFoundFilter;
 exports.IpsNotFoundFilter = IpsNotFoundFilter = __decorate([
-    (0, common_1.Catch)(common_1.NotFoundException),
+    (0, common_1.Catch)(common_1.NotFoundException)
+    /** Optional filter that reports route-not-found spikes to IPS behavior detectors. */
+    ,
     __param(0, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [runtime_1.IpsRuntime])
 ], IpsNotFoundFilter);

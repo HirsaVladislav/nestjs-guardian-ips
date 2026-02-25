@@ -2,18 +2,25 @@ import { Store } from '../store/store.interface';
 import { AlertEvent, AlertIncludeField, AlertTemplateField } from '../alerts/alerter.interface';
 import { LoggerPort } from '../utils/logger.interface';
 
+/** Detection-only (`IDS`) or blocking (`IPS`) operating mode. */
 export type IpsMode = 'IDS' | 'IPS';
+/** Built-in profile names supported by the module. */
 export type IpsProfileName = 'default' | 'public' | 'login' | 'admin';
+/** Bucket key strategies used by profile/rule rate limits. */
 export type RateLimitKey = 'ip' | 'ip+path' | 'ip+username' | 'ip+email' | 'ip+id';
+/** Actions available in JSON rules. */
 export type RuleAction = 'log' | 'alert' | 'block' | 'rateLimit' | 'ban';
+/** Client IP extraction mode. */
 export type ClientIpMode = 'strict' | 'hops';
 
+/** Path matching condition for `rule.when.path`. */
 export interface PathCondition {
   equals?: string;
   prefix?: string;
   regex?: string;
 }
 
+/** JSON rule definition used by the rule engine. */
 export interface Rule {
   id: string;
   rev?: number;
@@ -54,12 +61,14 @@ export interface Rule {
   };
 }
 
+/** Rate-limit policy shared by profiles and rule actions. */
 export interface RateLimitPolicy {
   key: RateLimitKey;
   windowSec: number;
   max: number;
 }
 
+/** Behavior spike thresholds used for secondary detections (burst, stuffing, 404/401/429 spikes). */
 export interface BehaviorPolicy {
   windowSec?: number;
   max404?: number;
@@ -69,6 +78,7 @@ export interface BehaviorPolicy {
   maxUniqueUsernames?: number;
 }
 
+/** Per-profile IPS/IDS policy. */
 export interface ProfilePolicy {
   rateLimit?: RateLimitPolicy;
   allowCidrs?: string[];
@@ -77,6 +87,7 @@ export interface ProfilePolicy {
   behavior?: BehaviorPolicy;
 }
 
+/** Full set of profile policies. */
 export interface IpsProfiles {
   default: ProfilePolicy;
   public: ProfilePolicy;
@@ -84,6 +95,7 @@ export interface IpsProfiles {
   admin: ProfilePolicy;
 }
 
+/** Slack webhook alert channel configuration. */
 export interface SlackAlertOptions {
   enabled?: boolean;
   webhookUrl?: string;
@@ -94,6 +106,7 @@ export interface SlackAlertOptions {
   payloadIncludeText?: boolean;
 }
 
+/** SMTP email alert channel configuration. */
 export interface EmailAlertOptions {
   enabled?: boolean;
   smtp: {
@@ -111,15 +124,68 @@ export interface EmailAlertOptions {
   fields?: AlertTemplateField[];
 }
 
+/** Periodic rate-limit summary report configuration. */
+export interface IpsRateLimitReportOptions {
+  /**
+   * Enables periodic rate-limit summary reports.
+   * Alias of `collect` for readability.
+   */
+  enabled?: boolean;
+  /**
+   * Enables periodic rate-limit summary collection and sending.
+   * If omitted, defaults to `false`.
+   */
+  collect?: boolean;
+  /**
+   * Report period. Supports seconds (`30`), or duration strings like `30m`, `1h`, `1d`.
+   * Invalid values fall back to 30 minutes.
+   */
+  period?: number | string;
+  /**
+   * If `true`, suppresses immediate `rateLimit` alerts and sends only periodic summaries.
+   * Does not affect `ban`, `block`, or behavior spike alerts.
+   */
+  suppressImmediate?: boolean;
+  /**
+   * Maximum number of grouped items included in one summary message (top by count).
+   */
+  maxItems?: number;
+  /**
+   * Maximum number of unique rate-limit groups stored in memory for the current window.
+   * When full, the oldest groups are evicted first (FIFO).
+   */
+  maxGroups?: number;
+}
+
+/** Normalized internal rate-limit report configuration. */
+export interface IpsResolvedRateLimitReportOptions {
+  enabled: boolean;
+  periodSec: number;
+  suppressImmediate: boolean;
+  maxItems: number;
+  maxGroups: number;
+}
+
+/** Alert channels and alert-related features. */
 export interface IpsAlertsOptions {
   slack?: SlackAlertOptions;
   email?: EmailAlertOptions;
+  rateLimitReport?: IpsRateLimitReportOptions;
 }
 
+/** Normalized alert configuration used by runtime. */
+export interface IpsResolvedAlertsOptions {
+  slack?: SlackAlertOptions;
+  email?: EmailAlertOptions;
+  rateLimitReport?: IpsResolvedRateLimitReportOptions;
+}
+
+/** Controls which fields are included in alert payloads. */
 export interface IpsPrivacyOptions {
   include?: Array<keyof AlertEvent>;
 }
 
+/** Redis connection tuning for built-in Redis store. */
 export interface IpsRedisOptions {
   url?: string;
   keyPrefix?: string;
@@ -128,6 +194,7 @@ export interface IpsRedisOptions {
   retryDelayMs?: number;
 }
 
+/** Store configuration (memory, redis, auto, or custom instance). */
 export interface IpsStoreOptions {
   type?: 'memory' | 'redis' | 'auto';
   maxBytes?: number;
@@ -135,11 +202,13 @@ export interface IpsStoreOptions {
   redis?: IpsRedisOptions;
 }
 
+/** Rule sources (file path and/or inline items). */
 export interface IpsRulesOptions {
   loadFrom?: string;
   items?: Rule[];
 }
 
+/** Client IP extraction and proxy trust configuration. */
 export interface IpsClientIpOptions {
   mode?: ClientIpMode;
   trustedProxyCidrs?: string | string[];
@@ -149,6 +218,7 @@ export interface IpsClientIpOptions {
   denyPrivateIpsFromHeaders?: boolean;
 }
 
+/** Normalized client IP extraction configuration used by runtime. */
 export interface IpsResolvedClientIpOptions {
   mode: ClientIpMode;
   trustedProxyCidrs: string[];
@@ -158,6 +228,7 @@ export interface IpsResolvedClientIpOptions {
   denyPrivateIpsFromHeaders: boolean;
 }
 
+/** Top-level Nest IPS module configuration. */
 export interface IpsModuleOptions {
   mode?: IpsMode;
   clientIp?: IpsClientIpOptions;
@@ -180,6 +251,7 @@ export interface IpsModuleOptions {
   };
 }
 
+/** Fully normalized runtime options resolved from `IpsModuleOptions`. */
 export interface IpsResolvedOptions {
   mode: IpsMode;
   clientIp: IpsResolvedClientIpOptions;
@@ -189,14 +261,16 @@ export interface IpsResolvedOptions {
   memoryCapBytes: number;
   rules?: Rule[] | IpsRulesOptions;
   profiles: IpsProfiles;
-  alerts: IpsAlertsOptions;
+  alerts: IpsResolvedAlertsOptions;
   privacy: Required<IpsPrivacyOptions>;
   scoreThreshold: number;
   cheapSignatures: Required<NonNullable<IpsModuleOptions['cheapSignatures']>>;
   notFound: Required<NonNullable<IpsModuleOptions['notFound']>>;
 }
 
+/** Default memory cap for built-in `MemoryStore` (500 MB). */
 export const DEFAULT_MEMORY_CAP_BYTES = 500 * 1024 * 1024;
+/** Default header priority order used for client IP extraction. */
 export const DEFAULT_CLIENT_IP_HEADERS = [
   'cf-connecting-ip',
   'true-client-ip',
@@ -205,6 +279,7 @@ export const DEFAULT_CLIENT_IP_HEADERS = [
   'forwarded',
   'x-real-ip',
 ];
+/** Default cheap-signature path fragments used by middleware prefilter. */
 export const DEFAULT_CHEAP_SIGNATURE_PATTERNS = [
   '/.env',
   '/.git',
@@ -222,6 +297,7 @@ export const DEFAULT_CHEAP_SIGNATURE_PATTERNS = [
   '%2e%2e\\',
 ];
 
+/** Default profile policies applied when user config omits profile overrides. */
 export const DEFAULT_PROFILES: IpsProfiles = {
   default: {
     rateLimit: { key: 'ip', windowSec: 60, max: 120 },
@@ -245,6 +321,7 @@ export const DEFAULT_PROFILES: IpsProfiles = {
   },
 };
 
+/** Validates and normalizes user config into runtime-ready options. */
 export function resolveIpsOptions(input: IpsModuleOptions = {}): IpsResolvedOptions {
   const slack = input.alerts?.slack;
   const slackConfigured = Boolean(slack);
@@ -268,6 +345,7 @@ export function resolveIpsOptions(input: IpsModuleOptions = {}): IpsResolvedOpti
       '[nest-ips] alerts.email.smtp.{host,port,user,pass,from,to[]} is required when alerts.email is configured',
     );
   }
+  const rateLimitReport = resolveRateLimitReportOptions(input.alerts?.rateLimitReport);
 
   const cheapPatterns = input.cheapSignatures?.patterns ?? DEFAULT_CHEAP_SIGNATURE_PATTERNS;
   const cheapSignaturesEnabled = input.cheapSignatures?.enabled ?? true;
@@ -290,6 +368,7 @@ export function resolveIpsOptions(input: IpsModuleOptions = {}): IpsResolvedOpti
     alerts: {
       slack: slack ? { ...slack, enabled: slackEnabled } : undefined,
       email: email ? { ...email, enabled: emailEnabled } : undefined,
+      rateLimitReport,
     },
     privacy: {
       include: input.privacy?.include ?? [
@@ -324,6 +403,27 @@ function resolveEnabled(explicit: boolean | undefined, hasParams: boolean): bool
     return explicit;
   }
   return hasParams;
+}
+
+function resolveRateLimitReportOptions(
+  input: IpsRateLimitReportOptions | undefined,
+): IpsResolvedRateLimitReportOptions | undefined {
+  if (!input) {
+    return undefined;
+  }
+
+  const enabled = input.collect ?? input.enabled ?? false;
+  const periodSec = normalizeDurationSec(input.period, 1800);
+  const maxItems = normalizePositiveInt(input.maxItems, 50);
+  const maxGroups = normalizePositiveInt(input.maxGroups, 2000);
+
+  return {
+    enabled,
+    suppressImmediate: input.suppressImmediate ?? true,
+    maxItems,
+    maxGroups,
+    periodSec,
+  };
 }
 
 function resolveClientIpOptions(input: IpsModuleOptions): IpsResolvedClientIpOptions {
@@ -379,6 +479,49 @@ function normalizeHops(value: number | undefined): number {
   }
 
   return Math.max(0, Math.floor(value));
+}
+
+function normalizeDurationSec(value: number | string | undefined, fallbackSec: number): number {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return Math.max(1, Math.floor(value));
+  }
+
+  if (typeof value !== 'string') {
+    return fallbackSec;
+  }
+
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return fallbackSec;
+  }
+
+  const numeric = Number(trimmed);
+  if (Number.isFinite(numeric) && numeric > 0) {
+    return Math.max(1, Math.floor(numeric));
+  }
+
+  const match = trimmed.match(/^(\d+)\s*(s|m|h|d)$/);
+  if (!match) {
+    return fallbackSec;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2];
+  const factor =
+    unit === 's' ? 1 :
+    unit === 'm' ? 60 :
+    unit === 'h' ? 3600 :
+    86400;
+
+  return Math.max(1, amount * factor);
+}
+
+function normalizePositiveInt(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return fallback;
+  }
+
+  return Math.max(1, Math.floor(value));
 }
 
 function hasValidEmailSmtp(

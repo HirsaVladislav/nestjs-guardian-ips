@@ -6,9 +6,11 @@ import { IpsRuntime } from './runtime';
 
 @Global()
 @Module({})
+/** Global Nest module that creates and registers a shared `IpsRuntime`. */
 export class IpsModule implements OnModuleInit, OnModuleDestroy {
   constructor(private readonly runtime: IpsRuntime) {}
 
+  /** Creates a globally-available IPS module with provided configuration. */
   static forRoot(options: IpsModuleOptions = {}): DynamicModule {
     return {
       module: IpsModule,
@@ -28,11 +30,13 @@ export class IpsModule implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  /** Initializes runtime store/alerts and exposes runtime through registry for middleware/filters. */
   async onModuleInit(): Promise<void> {
     await this.runtime.startup();
     setIpsRuntime(this.runtime);
   }
 
+  /** Flushes pending report state and closes store connections. */
   async onModuleDestroy(): Promise<void> {
     await this.runtime.shutdown();
     clearIpsRuntime();

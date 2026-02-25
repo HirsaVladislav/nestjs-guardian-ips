@@ -2,6 +2,7 @@ import { MemoryStore } from './memory.store';
 import { createNodeRedisClient, RedisClientPort } from './redis.client';
 import { Store } from './store.interface';
 
+/** Configuration for the built-in Redis-backed store wrapper. */
 export interface RedisStoreOptions {
   url: string;
   keyPrefix?: string;
@@ -12,6 +13,7 @@ export interface RedisStoreOptions {
   fallbackMaxBytes: number;
 }
 
+/** Redis store with optional fallback to `MemoryStore` when configured in `auto` mode. */
 export class RedisStore implements Store {
   private readonly redis: RedisClientPort;
   private readonly fallback: MemoryStore | null;
@@ -26,6 +28,7 @@ export class RedisStore implements Store {
   private closed = false;
   private connectInFlight: Promise<void> | null = null;
 
+  /** Creates Redis-backed store and optional memory fallback. */
   constructor(options: RedisStoreOptions) {
     this.strict = options.strict;
     this.keyPrefix = options.keyPrefix ?? 'ips:';
@@ -40,10 +43,12 @@ export class RedisStore implements Store {
     });
   }
 
+  /** Reads key from Redis or fallback store. */
   async get(key: string): Promise<string | null> {
     return this.runRedis(() => this.redis.get(this.k(key)), () => this.fallbackGet(key));
   }
 
+  /** Writes key to Redis or fallback store. */
   async set(key: string, value: string, ttlSec?: number): Promise<void> {
     await this.runRedis(
       async () => {
@@ -58,6 +63,7 @@ export class RedisStore implements Store {
     );
   }
 
+  /** Deletes key from Redis or fallback store. */
   async del(key: string): Promise<void> {
     await this.runRedis(
       async () => {
@@ -67,6 +73,7 @@ export class RedisStore implements Store {
     );
   }
 
+  /** Increments counter in Redis pipeline or fallback store. */
   async incr(key: string, windowSec: number): Promise<number> {
     return this.runRedis(
       async () => {
@@ -79,6 +86,7 @@ export class RedisStore implements Store {
     );
   }
 
+  /** Adds member to Redis set and returns cardinality (or fallback equivalent). */
   async sadd(key: string, value: string, ttlSec: number): Promise<number> {
     return this.runRedis(
       async () => {
@@ -91,6 +99,7 @@ export class RedisStore implements Store {
     );
   }
 
+  /** Closes Redis connection and prevents further operations. */
   async close(): Promise<void> {
     if (this.closed) {
       return;
@@ -110,6 +119,7 @@ export class RedisStore implements Store {
     }
   }
 
+  /** Validates store readiness (used by `IpsRuntime.startup()`). */
   async ready(): Promise<void> {
     try {
       await this.ensureConnected();

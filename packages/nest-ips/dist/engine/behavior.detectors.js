@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.BehaviorDetectors = void 0;
+/** Tracks behavior counters and emits signals when profile thresholds are exceeded. */
 class BehaviorDetectors {
     constructor(store) {
         this.store = store;
     }
+    /** Records a request for burst detection. */
     async recordRequest(ip, profile) {
         const behavior = this.normalizeBehavior(profile.behavior);
         const burst = await this.store.incr(`behavior:burst:${ip}`, behavior.windowSec);
@@ -20,6 +22,7 @@ class BehaviorDetectors {
         }
         return [];
     }
+    /** Records response status for auth/404/429 spike detection. */
     async recordStatus(ip, status, profile) {
         const behavior = this.normalizeBehavior(profile.behavior);
         const signals = [];
@@ -58,6 +61,7 @@ class BehaviorDetectors {
         }
         return signals;
     }
+    /** Tracks unique usernames per IP to detect credential stuffing. */
     async recordStuffing(ip, username, profile) {
         if (!username) {
             return [];
@@ -76,6 +80,7 @@ class BehaviorDetectors {
         }
         return [];
     }
+    /** Tracks route-not-found bursts separately from application 404 responses. */
     async recordRouteNotFound(ip, windowSec, max) {
         const count = await this.store.incr(`behavior:route404:${ip}`, windowSec);
         if (count > max) {

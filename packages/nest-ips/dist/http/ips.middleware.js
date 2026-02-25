@@ -3,6 +3,10 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createIpsMiddleware = createIpsMiddleware;
 const runtime_registry_1 = require("../module/runtime.registry");
 const headers_1 = require("./headers");
+/**
+ * Creates HTTP middleware that performs early IPS checks before Nest guards/controllers.
+ * Applies baseline rate-limit headers and may short-circuit with `403`/`429`.
+ */
 function createIpsMiddleware() {
     return async (req, res, next) => {
         const runtime = (0, runtime_registry_1.getIpsRuntime)();

@@ -21,6 +21,7 @@ const FIELD_LABELS = {
     countsJson: 'counts',
     message: 'message',
 };
+/** Renders a string template by replacing `{{token}}` placeholders from `AlertEvent`. */
 function renderAlertTemplate(template, event) {
     if (!template) {
         return '';
@@ -30,6 +31,7 @@ function renderAlertTemplate(template, event) {
         return value ?? '';
     });
 }
+/** Recursively renders template placeholders inside strings/arrays/objects. */
 function renderAlertTemplateValue(value, event) {
     if (typeof value === 'string') {
         return renderAlertTemplate(value, event);
@@ -46,6 +48,7 @@ function renderAlertTemplateValue(value, event) {
     }
     return output;
 }
+/** Renders selected alert fields as human-readable lines. */
 function renderAlertFields(event, fields, separator = '\n') {
     return fields
         .map((field) => {

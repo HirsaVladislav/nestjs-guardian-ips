@@ -28,11 +28,13 @@ interface SetEntry extends BaseEntry {
 
 type Entry = StringEntry | CounterEntry | SetEntry;
 
+/** Configuration for built-in in-memory store. */
 export interface MemoryStoreOptions {
   maxBytes?: number;
   overheadBytes?: number;
 }
 
+/** In-memory store with TTL support and hard memory cap using priority-aware eviction. */
 export class MemoryStore implements Store {
   private readonly maxBytes: number;
   private readonly overheadBytes: number;
@@ -40,11 +42,13 @@ export class MemoryStore implements Store {
   private readonly lru = new MemoryLru();
   private currentBytes = 0;
 
+  /** Creates a memory store with bounded memory usage. */
   constructor(options: MemoryStoreOptions = {}) {
     this.maxBytes = options.maxBytes ?? 500 * 1024 * 1024;
     this.overheadBytes = options.overheadBytes ?? 96;
   }
 
+  /** Reads string/counter/set-cardinality value by key. */
   async get(key: string): Promise<string | null> {
     const entry = this.readEntry(key);
     if (!entry) {
@@ -58,6 +62,7 @@ export class MemoryStore implements Store {
     return String(entry.value);
   }
 
+  /** Stores string value with optional TTL. */
   async set(key: string, value: string, ttlSec?: number): Promise<void> {
     const expiresAt = ttlSec ? Date.now() + ttlSec * 1000 : Number.POSITIVE_INFINITY;
     const priority = this.priorityForKey(key);
@@ -78,10 +83,12 @@ export class MemoryStore implements Store {
     this.ensureCapacity(key, priority);
   }
 
+  /** Deletes a key from memory store. */
   async del(key: string): Promise<void> {
     this.deleteEntry(key);
   }
 
+  /** Increments a counter key within a fixed TTL window. */
   async incr(key: string, windowSec: number): Promise<number> {
     const now = Date.now();
     const existing = this.readEntry(key);
@@ -110,6 +117,7 @@ export class MemoryStore implements Store {
     return nextValue;
   }
 
+  /** Adds set member and returns unique set size within TTL window. */
   async sadd(key: string, value: string, ttlSec: number): Promise<number> {
     const now = Date.now();
     const expiresAt = now + ttlSec * 1000;

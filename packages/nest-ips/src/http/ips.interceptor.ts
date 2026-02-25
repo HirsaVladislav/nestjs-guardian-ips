@@ -7,12 +7,14 @@ import { IpsRuntime } from '../module/runtime';
 import { getIpsRuntime } from '../module/runtime.registry';
 
 @Injectable()
+/** Interceptor that records request/response outcomes for behavior detectors (burst, 401/404/429 spikes). */
 export class IpsInterceptor implements NestInterceptor {
   constructor(
     @Optional() private readonly runtime?: IpsRuntime,
     @Optional() private readonly reflector?: Reflector,
   ) {}
 
+  /** Tracks request start and error status for HTTP requests unless route is marked with `@IpsBypass()`. */
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<unknown>> {
     if (context.getType() !== 'http') {
       return next.handle();

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.applyNormalization = applyNormalization;
+/** Applies normalization steps in order to a string used in rule matching. */
 function applyNormalization(input, steps = []) {
     let value = input;
     for (const step of steps) {

@@ -1,6 +1,10 @@
 import { getIpsRuntime } from '../module/runtime.registry';
 import { applyHeaders } from './headers';
 
+/**
+ * Creates HTTP middleware that performs early IPS checks before Nest guards/controllers.
+ * Applies baseline rate-limit headers and may short-circuit with `403`/`429`.
+ */
 export function createIpsMiddleware() {
   return async (req: Record<string, unknown>, res: Record<string, unknown>, next: (err?: unknown) => void) => {
     const runtime = getIpsRuntime();

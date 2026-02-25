@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.IpsLogger = void 0;
+/** Default console logger used when custom `logger` option is not provided. */
 class IpsLogger {
     constructor(scope = 'nest-ips') {
         this.scope = scope;

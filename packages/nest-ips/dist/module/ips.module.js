@@ -19,6 +19,7 @@ let IpsModule = IpsModule_1 = class IpsModule {
     constructor(runtime) {
         this.runtime = runtime;
     }
+    /** Creates a globally-available IPS module with provided configuration. */
     static forRoot(options = {}) {
         return {
             module: IpsModule_1,
@@ -37,10 +38,12 @@ let IpsModule = IpsModule_1 = class IpsModule {
             global: true,
         };
     }
+    /** Initializes runtime store/alerts and exposes runtime through registry for middleware/filters. */
     async onModuleInit() {
         await this.runtime.startup();
         (0, runtime_registry_1.setIpsRuntime)(this.runtime);
     }
+    /** Flushes pending report state and closes store connections. */
     async onModuleDestroy() {
         await this.runtime.shutdown();
         (0, runtime_registry_1.clearIpsRuntime)();
@@ -49,6 +52,8 @@ let IpsModule = IpsModule_1 = class IpsModule {
 exports.IpsModule = IpsModule;
 exports.IpsModule = IpsModule = IpsModule_1 = __decorate([
     (0, common_1.Global)(),
-    (0, common_1.Module)({}),
+    (0, common_1.Module)({})
+    /** Global Nest module that creates and registers a shared `IpsRuntime`. */
+    ,
     __metadata("design:paramtypes", [runtime_1.IpsRuntime])
 ], IpsModule);

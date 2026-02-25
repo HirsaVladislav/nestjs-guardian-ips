@@ -1,3 +1,4 @@
+/** Applies response headers across common response adapters (`setHeader`, `header`, `set`). */
 export function applyHeaders(res: Record<string, unknown>, headers: Record<string, string>): void {
   for (const [key, value] of Object.entries(headers)) {
     if (typeof (res as { setHeader?: (name: string, value: string) => void }).setHeader === 'function') {

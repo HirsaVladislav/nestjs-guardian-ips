@@ -1,5 +1,6 @@
 import { LoggerPort } from './logger.interface';
 
+/** Default console logger used when custom `logger` option is not provided. */
 export class IpsLogger implements LoggerPort {
   constructor(private readonly scope = 'nest-ips') {}
 

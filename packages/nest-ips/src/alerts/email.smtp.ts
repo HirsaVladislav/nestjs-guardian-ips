@@ -2,6 +2,10 @@ import nodemailer from 'nodemailer';
 import { AlertEvent, Alerter, AlertTemplateField } from './alerter.interface';
 import { renderAlertFields, renderAlertTemplate } from './template.renderer';
 
+const DEFAULT_SMTP_CONNECTION_TIMEOUT_MS = 5000;
+const DEFAULT_SMTP_GREETING_TIMEOUT_MS = 5000;
+const DEFAULT_SMTP_SOCKET_TIMEOUT_MS = 10000;
+
 interface SmtpConfig {
   host: string;
   port: number;
@@ -15,6 +19,7 @@ interface SmtpConfig {
   fields?: AlertTemplateField[];
 }
 
+/** SMTP email alerter implemented via `nodemailer`. */
 export class EmailSmtpAlerter implements Alerter {
   private transporter: {
     sendMail(input: {
@@ -48,6 +53,7 @@ export class EmailSmtpAlerter implements Alerter {
     this.transporter = this.createTransporter();
   }
 
+  /** Sends one alert email to configured recipients. */
   async send(event: AlertEvent): Promise<void> {
     if (!this.transporter) {
       return;
@@ -74,6 +80,9 @@ export class EmailSmtpAlerter implements Alerter {
         host: this.config.host,
         port: this.config.port,
         secure: this.config.secure ?? this.config.port === 465,
+        connectionTimeout: DEFAULT_SMTP_CONNECTION_TIMEOUT_MS,
+        greetingTimeout: DEFAULT_SMTP_GREETING_TIMEOUT_MS,
+        socketTimeout: DEFAULT_SMTP_SOCKET_TIMEOUT_MS,
         auth: {
           user: this.config.user,
           pass: this.config.pass,

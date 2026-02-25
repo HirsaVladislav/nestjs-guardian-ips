@@ -2,7 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.MemoryStore = void 0;
 const memory_lru_1 = require("./memory.lru");
+/** In-memory store with TTL support and hard memory cap using priority-aware eviction. */
 class MemoryStore {
+    /** Creates a memory store with bounded memory usage. */
     constructor(options = {}) {
         this.data = new Map();
         this.lru = new memory_lru_1.MemoryLru();
@@ -10,6 +12,7 @@ class MemoryStore {
         this.maxBytes = options.maxBytes ?? 500 * 1024 * 1024;
         this.overheadBytes = options.overheadBytes ?? 96;
     }
+    /** Reads string/counter/set-cardinality value by key. */
     async get(key) {
         const entry = this.readEntry(key);
         if (!entry) {
@@ -21,6 +24,7 @@ class MemoryStore {
         }
         return String(entry.value);
     }
+    /** Stores string value with optional TTL. */
     async set(key, value, ttlSec) {
         const expiresAt = ttlSec ? Date.now() + ttlSec * 1000 : Number.POSITIVE_INFINITY;
         const priority = this.priorityForKey(key);
@@ -37,9 +41,11 @@ class MemoryStore {
         this.writeEntry(key, next);
         this.ensureCapacity(key, priority);
     }
+    /** Deletes a key from memory store. */
     async del(key) {
         this.deleteEntry(key);
     }
+    /** Increments a counter key within a fixed TTL window. */
     async incr(key, windowSec) {
         const now = Date.now();
         const existing = this.readEntry(key);
@@ -63,6 +69,7 @@ class MemoryStore {
         this.ensureCapacity(key, priority);
         return nextValue;
     }
+    /** Adds set member and returns unique set size within TTL window. */
     async sadd(key, value, ttlSec) {
         const now = Date.now();
         const expiresAt = now + ttlSec * 1000;

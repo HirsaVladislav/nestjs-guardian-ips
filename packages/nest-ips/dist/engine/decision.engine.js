@@ -1,10 +1,12 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DecisionEngine = void 0;
+/** Builds decisions, alert payloads and profile-specific derived values. */
 class DecisionEngine {
     constructor(options) {
         this.options = options;
     }
+    /** Resolves profile by explicit decorator override or path heuristics. */
     getProfile(path, explicit) {
         if (explicit) {
             return explicit;
@@ -20,6 +22,7 @@ class DecisionEngine {
         }
         return 'default';
     }
+    /** Builds storage key suffix for a configured rate-limit strategy. */
     getRateLimitKey(type, ctx) {
         if (type === 'ip') {
             return ctx.ip;
@@ -35,12 +38,15 @@ class DecisionEngine {
         }
         return `${ctx.ip}:${ctx.username ?? '-'}`;
     }
+    /** Returns profile policy with fallback to `default`. */
     profilePolicy(profile) {
         return this.options.profiles[profile] ?? this.options.profiles.default;
     }
+    /** Returns default ban TTL for profile with fallback chain. */
     defaultBanTtl(profile) {
         return this.profilePolicy(profile).banTtlSec ?? this.options.profiles.default.banTtlSec ?? 600;
     }
+    /** Converts a matched rule action into a runtime decision template. */
     fromRule(rule) {
         if (rule.action === 'block') {
             return {
@@ -83,6 +89,7 @@ class DecisionEngine {
         }
         return { blocked: false };
     }
+    /** Creates alert event payload from current decision context. */
     alertEvent(ctx, action, message, details) {
         return {
             ts: Date.now(),
@@ -99,6 +106,7 @@ class DecisionEngine {
             message,
         };
     }
+    /** Removes fields from alert event according to privacy/include rules. */
     sanitizeAlert(event, include) {
         const mandatory = ['ts', 'mode', 'action', 'ip', 'message'];
         const allowed = new Set([...(include ?? this.options.privacy.include), ...mandatory]);

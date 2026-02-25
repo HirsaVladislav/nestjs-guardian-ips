@@ -4,6 +4,7 @@ import { IpsResolvedOptions, Rule } from '../module/options';
 import { LoggerPort } from '../utils/logger.interface';
 import { MatchContext, matchesAll, matchesWhen } from './matchers';
 
+/** Loads and matches IPS rules from file and/or inline config. */
 export class RuleEngine {
   private rules: Rule[] = [];
 
@@ -14,10 +15,12 @@ export class RuleEngine {
     this.rules = this.loadRules();
   }
 
+  /** Returns currently loaded rule set. */
   getRules(): Rule[] {
     return this.rules;
   }
 
+  /** Returns all enabled rules matching the provided context. */
   match(ctx: MatchContext): Rule[] {
     const out: Rule[] = [];
 

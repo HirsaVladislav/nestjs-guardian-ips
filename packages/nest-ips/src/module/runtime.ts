@@ -10,6 +10,7 @@ import { RuleEngine } from '../engine/rule.engine';
 import {
   IpsModuleOptions,
   IpsProfileName,
+  IpsResolvedRateLimitReportOptions,
   IpsResolvedOptions,
   ProfilePolicy,
   RateLimitPolicy,
@@ -24,6 +25,7 @@ import { IpsLogger } from '../utils/logger';
 import { LoggerPort } from '../utils/logger.interface';
 import { ensureIpsContext, getIpsContext, IpsHttpContext, IpsRateLimitSnapshot, setIpsContext } from '../http/context';
 
+/** Normalized middleware/guard response decision returned by runtime checks. */
 export interface RuntimeDecision {
   blocked: boolean;
   status: number;
@@ -31,6 +33,16 @@ export interface RuntimeDecision {
   headers?: Record<string, string>;
 }
 
+interface RateLimitReportRow {
+  ruleId: string;
+  ip: string;
+  method: string;
+  path: string;
+  profile: string;
+  count: number;
+}
+
+/** Core IPS/IDS runtime orchestrating stores, rules, behavior detectors and alert channels. */
 export class IpsRuntime {
   private readonly logger: LoggerPort;
   private readonly options: IpsResolvedOptions;
@@ -40,7 +52,15 @@ export class IpsRuntime {
   private readonly behavior: BehaviorDetectors;
   private readonly throttle: AlertThrottle;
   private readonly alerter: Alerter | null;
+  private readonly rateLimitReportRows = new Map<string, RateLimitReportRow>();
+  private rateLimitReportWindowStartedAtMs = Date.now();
+  private rateLimitReportTotal = 0;
+  private rateLimitReportTimer: ReturnType<typeof setInterval> | null = null;
+  private rateLimitReportFlushing = false;
+  private rateLimitReportEvictedGroups = 0;
+  private rateLimitReportEvictedEvents = 0;
 
+  /** Creates runtime and resolves normalized options, store, rules and alert transports. */
   constructor(input: IpsModuleOptions = {}) {
     this.options = resolveIpsOptions(input);
     this.logger = this.options.logger ?? new IpsLogger();
@@ -52,22 +72,32 @@ export class IpsRuntime {
     this.alerter = this.resolveAlerter();
   }
 
+  /** Returns normalized runtime options (useful for diagnostics and tests). */
   getOptions(): IpsResolvedOptions {
     return this.options;
   }
 
+  /** Initializes store connectivity and starts periodic rate-limit summary timer if enabled. */
   async startup(): Promise<void> {
     if (typeof this.store.ready === 'function') {
       await this.store.ready();
     }
+    this.startRateLimitReportTimer();
   }
 
+  /** Stops timers, flushes pending summaries and closes the configured store. */
   async shutdown(): Promise<void> {
+    if (this.rateLimitReportTimer) {
+      clearInterval(this.rateLimitReportTimer);
+      this.rateLimitReportTimer = null;
+    }
+    await this.flushRateLimitReport('shutdown');
     if (typeof this.store.close === 'function') {
       await this.store.close();
     }
   }
 
+  /** Returns rate-limit headers for current request context, if a rate-limit snapshot exists. */
   getRateLimitHeaders(req: Record<string, unknown>): Record<string, string> | null {
     const rateLimit = getIpsContext(req)?.rateLimit;
     if (!rateLimit) {
@@ -77,6 +107,7 @@ export class IpsRuntime {
     return this.buildRateLimitHeaders(rateLimit, false);
   }
 
+  /** Builds or updates per-request IPS context (IP, path, profile, identity fields, request id). */
   contextFor(req: Record<string, unknown>, profileOverride?: IpsProfileName): IpsHttpContext {
     const existing = ensureIpsContext(req);
 
@@ -108,6 +139,7 @@ export class IpsRuntime {
     return next;
   }
 
+  /** Runs early middleware checks (ban status, global middleware rate-limit, cheap signatures). */
   async middlewareCheck(req: Record<string, unknown>): Promise<RuntimeDecision | null> {
     const ctx = this.contextFor(req);
 
@@ -166,6 +198,7 @@ export class IpsRuntime {
     return null;
   }
 
+  /** Runs guard-stage checks (CIDR policy, profile rate-limit, stuffing, rules). */
   async guardCheck(
     req: Record<string, unknown>,
     profileOverride: IpsProfileName | undefined,
@@ -218,6 +251,7 @@ export class IpsRuntime {
     return null;
   }
 
+  /** Records request-start behavior counters (burst detection) before controller handler execution. */
   async onBeforeHandler(req: Record<string, unknown>): Promise<void> {
     const ctx = this.contextFor(req);
     const policy = this.decisionEngine.profilePolicy(ctx.profile);
@@ -225,6 +259,7 @@ export class IpsRuntime {
     await this.reactToSignals(ctx, signals, policy);
   }
 
+  /** Records handler error/response status for behavior detectors (401/403/404/429 spikes). */
   async onError(req: Record<string, unknown>, status: number): Promise<void> {
     const ctx = this.contextFor(req);
     const policy = this.decisionEngine.profilePolicy(ctx.profile);
@@ -233,6 +268,7 @@ export class IpsRuntime {
     await this.reactToSignals(ctx, signals, policy);
   }
 
+  /** Records unmatched-route events for route-not-found spike detection. */
   async onRouteNotFound(req: Record<string, unknown>): Promise<void> {
     const ctx = this.contextFor(req);
     const policy = this.decisionEngine.profilePolicy(ctx.profile);
@@ -433,6 +469,11 @@ export class IpsRuntime {
       counts: decision.counts,
     });
 
+    const suppressImmediate = this.collectRateLimitReport(ctx, decision, ruleId);
+    if (suppressImmediate) {
+      return;
+    }
+
     await this.sendAlert(
       this.decisionEngine.alertEvent(
         ctx,
@@ -469,8 +510,16 @@ export class IpsRuntime {
       return;
     }
 
-    await this.alerter.send(this.decisionEngine.sanitizeAlert(event, include));
-    this.logDetection('alert-sent', { ip }, { ruleId, action: event.action });
+    try {
+      await this.alerter.send(this.decisionEngine.sanitizeAlert(event, include));
+      this.logDetection('alert-sent', { ip }, { ruleId, action: event.action });
+    } catch (error) {
+      this.logDetection('alert-failed', { ip }, {
+        ruleId,
+        action: event.action,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
   private async enforceRateLimit(prefix: string, policy: RateLimitPolicy, ctx: IpsHttpContext): Promise<RuntimeDecision | null> {
@@ -573,6 +622,155 @@ export class IpsRuntime {
       return 120;
     }
     return Math.min(...values);
+  }
+
+  private startRateLimitReportTimer(): void {
+    const config = this.rateLimitReportConfig();
+    if (!config?.enabled || !this.alerter) {
+      return;
+    }
+
+    const periodMs = Math.max(1000, (config.periodSec ?? 1800) * 1000);
+    this.rateLimitReportWindowStartedAtMs = Date.now();
+    this.rateLimitReportTimer = setInterval(() => {
+      void this.flushRateLimitReport('interval');
+    }, periodMs);
+    this.rateLimitReportTimer.unref?.();
+  }
+
+  private collectRateLimitReport(ctx: IpsHttpContext, decision: DecisionResult, ruleId: string): boolean {
+    const config = this.rateLimitReportConfig();
+    if (!config?.enabled || !this.alerter || decision.action !== 'rateLimit') {
+      return false;
+    }
+
+    const key = `${ruleId}|${ctx.ip}|${ctx.method}|${ctx.path}|${ctx.profile}`;
+    const current = this.rateLimitReportRows.get(key);
+    if (current) {
+      current.count += 1;
+    } else {
+      if (this.rateLimitReportRows.size >= config.maxGroups) {
+        const oldestKey = this.rateLimitReportRows.keys().next().value;
+        if (typeof oldestKey === 'string') {
+          const oldest = this.rateLimitReportRows.get(oldestKey);
+          if (oldest) {
+            this.rateLimitReportEvictedGroups += 1;
+            this.rateLimitReportEvictedEvents += oldest.count;
+          }
+          this.rateLimitReportRows.delete(oldestKey);
+        }
+      }
+      this.rateLimitReportRows.set(key, {
+        ruleId,
+        ip: ctx.ip,
+        method: ctx.method,
+        path: ctx.path,
+        profile: ctx.profile,
+        count: 1,
+      });
+    }
+    this.rateLimitReportTotal += 1;
+
+    return config.suppressImmediate;
+  }
+
+  private async flushRateLimitReport(trigger: 'interval' | 'shutdown'): Promise<void> {
+    if (this.rateLimitReportFlushing) {
+      return;
+    }
+    const config = this.rateLimitReportConfig();
+    if (!config?.enabled || !this.alerter) {
+      this.resetRateLimitReportWindow();
+      return;
+    }
+    if (this.rateLimitReportTotal === 0 || this.rateLimitReportRows.size === 0) {
+      this.resetRateLimitReportWindow();
+      return;
+    }
+
+    this.rateLimitReportFlushing = true;
+    try {
+      const now = Date.now();
+      const rows = Array.from(this.rateLimitReportRows.values())
+        .sort((a, b) => b.count - a.count)
+        .slice(0, config.maxItems ?? 50);
+      const omitted = Math.max(0, this.rateLimitReportRows.size - rows.length);
+      const windowStartedAt = this.rateLimitReportWindowStartedAtMs;
+      const periodSec = config.periodSec;
+
+      const lines = rows.map((row, index) =>
+        `${index + 1}. count=${row.count} ip=${row.ip} ${row.method} ${row.path} rule=${row.ruleId} profile=${row.profile}`,
+      );
+      if (omitted > 0) {
+        lines.push(`... omitted ${omitted} more groups`);
+      }
+      if (this.rateLimitReportEvictedGroups > 0) {
+        lines.push(
+          `... evicted oldest groups due to maxGroups=${config.maxGroups}: groups=${this.rateLimitReportEvictedGroups}, events=${this.rateLimitReportEvictedEvents}`,
+        );
+      }
+
+      const message = [
+        `Rate-limit summary (${trigger})`,
+        `windowStart=${new Date(windowStartedAt).toISOString()}`,
+        `windowEnd=${new Date(now).toISOString()}`,
+        `periodSec=${periodSec}`,
+        `totalEvents=${this.rateLimitReportTotal}`,
+        `uniqueGroups=${this.rateLimitReportRows.size}`,
+        ...lines,
+      ].join('\n');
+
+      const event: AlertEvent = {
+        ts: now,
+        mode: this.options.mode,
+        action: 'alert',
+        ip: '*',
+        method: 'MULTI',
+        path: '*',
+        profile: 'summary',
+        ruleId: 'rateLimit-summary',
+        severity: 'medium',
+        counts: {
+          rateLimitEvents: this.rateLimitReportTotal,
+          uniqueGroups: this.rateLimitReportRows.size,
+          evictedGroups: this.rateLimitReportEvictedGroups,
+          evictedEvents: this.rateLimitReportEvictedEvents,
+          periodSec,
+        },
+        message,
+      };
+
+      await this.alerter.send(this.decisionEngine.sanitizeAlert(event));
+      this.logDetection('rate-limit-report-sent', { ip: '*' }, {
+        trigger,
+        totalEvents: this.rateLimitReportTotal,
+        uniqueGroups: this.rateLimitReportRows.size,
+        evictedGroups: this.rateLimitReportEvictedGroups,
+        evictedEvents: this.rateLimitReportEvictedEvents,
+        periodSec,
+        maxGroups: config.maxGroups,
+      });
+    } catch (error) {
+      this.logDetection('rate-limit-report-failed', { ip: '*' }, {
+        trigger,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.resetRateLimitReportWindow();
+      this.rateLimitReportFlushing = false;
+    }
+  }
+
+  private resetRateLimitReportWindow(): void {
+    this.rateLimitReportRows.clear();
+    this.rateLimitReportTotal = 0;
+    this.rateLimitReportEvictedGroups = 0;
+    this.rateLimitReportEvictedEvents = 0;
+    this.rateLimitReportWindowStartedAtMs = Date.now();
+  }
+
+  private rateLimitReportConfig(): IpsResolvedRateLimitReportOptions | undefined {
+    return this.options.alerts.rateLimitReport;
   }
 
   private resolveStore(options: IpsResolvedOptions): Store {

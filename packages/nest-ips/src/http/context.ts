@@ -1,5 +1,6 @@
 import { IpsProfileName } from '../module/options';
 
+/** Snapshot used to render rate-limit headers for the current request. */
 export interface IpsRateLimitSnapshot {
   limit: number;
   remaining: number;
@@ -8,6 +9,7 @@ export interface IpsRateLimitSnapshot {
   resetAfterSec: number;
 }
 
+/** Per-request IPS context stored on the raw HTTP request object. */
 export interface IpsHttpContext {
   ip: string;
   ua: string;
@@ -24,14 +26,17 @@ export interface IpsHttpContext {
 
 const IPS_HTTP_CONTEXT_KEY = Symbol.for('nest-ips:http-context');
 
+/** Stores IPS context on request object. */
 export function setIpsContext(req: Record<string, unknown>, ctx: IpsHttpContext): void {
   (req as Record<symbol, unknown>)[IPS_HTTP_CONTEXT_KEY] = ctx;
 }
 
+/** Reads IPS context from request object if already initialized. */
 export function getIpsContext(req: Record<string, unknown>): IpsHttpContext | undefined {
   return (req as Record<symbol, unknown>)[IPS_HTTP_CONTEXT_KEY] as IpsHttpContext | undefined;
 }
 
+/** Returns existing IPS context or initializes a safe fallback context. */
 export function ensureIpsContext(req: Record<string, unknown>): IpsHttpContext {
   const existing = getIpsContext(req);
   if (existing) {

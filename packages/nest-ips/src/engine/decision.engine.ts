@@ -1,6 +1,7 @@
 import { AlertEvent, AlertIncludeField } from '../alerts/alerter.interface';
 import { IpsProfileName, IpsResolvedOptions, ProfilePolicy, RateLimitKey, Rule } from '../module/options';
 
+/** Result of evaluating a rule/profile decision before response translation. */
 export interface DecisionResult {
   blocked: boolean;
   status?: number;
@@ -12,6 +13,7 @@ export interface DecisionResult {
   severity?: string;
 }
 
+/** Minimal request context used for profile/rate-limit/rule decisions. */
 export interface DecisionContext {
   ip: string;
   method: string;
@@ -23,9 +25,11 @@ export interface DecisionContext {
   username?: string;
 }
 
+/** Builds decisions, alert payloads and profile-specific derived values. */
 export class DecisionEngine {
   constructor(private readonly options: IpsResolvedOptions) {}
 
+  /** Resolves profile by explicit decorator override or path heuristics. */
   getProfile(path: string, explicit?: IpsProfileName): IpsProfileName {
     if (explicit) {
       return explicit;
@@ -42,6 +46,7 @@ export class DecisionEngine {
     return 'default';
   }
 
+  /** Builds storage key suffix for a configured rate-limit strategy. */
   getRateLimitKey(type: RateLimitKey, ctx: DecisionContext): string {
     if (type === 'ip') {
       return ctx.ip;
@@ -58,14 +63,17 @@ export class DecisionEngine {
     return `${ctx.ip}:${ctx.username ?? '-'}`;
   }
 
+  /** Returns profile policy with fallback to `default`. */
   profilePolicy(profile: IpsProfileName): ProfilePolicy {
     return this.options.profiles[profile] ?? this.options.profiles.default;
   }
 
+  /** Returns default ban TTL for profile with fallback chain. */
   defaultBanTtl(profile: IpsProfileName): number {
     return this.profilePolicy(profile).banTtlSec ?? this.options.profiles.default.banTtlSec ?? 600;
   }
 
+  /** Converts a matched rule action into a runtime decision template. */
   fromRule(rule: Rule): DecisionResult {
     if (rule.action === 'block') {
       return {
@@ -113,6 +121,7 @@ export class DecisionEngine {
     return { blocked: false };
   }
 
+  /** Creates alert event payload from current decision context. */
   alertEvent(
     ctx: DecisionContext,
     action: 'alert' | 'block' | 'rateLimit' | 'ban',
@@ -135,6 +144,7 @@ export class DecisionEngine {
     };
   }
 
+  /** Removes fields from alert event according to privacy/include rules. */
   sanitizeAlert(
     event: AlertEvent,
     include?: AlertIncludeField[],

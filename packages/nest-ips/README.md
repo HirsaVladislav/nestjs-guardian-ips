@@ -9,6 +9,7 @@ Application-level IDS/IPS for NestJS APIs.
 - Applies actions: `alert`, `rate-limit`, `ban`, `block`.
 - Supports multi-worker/shared state via Redis and local mode via memory store.
 - Sends security alerts to Slack and email with customizable templates.
+- Can aggregate repeated `rateLimit` alerts into periodic summary reports (`alerts.rateLimitReport`) to reduce alert spam.
 
 ## Install
 
@@ -95,8 +96,90 @@ store: {
 
 - Slack: requires `alerts.slack.webhookUrl`.
 - Email: requires full `alerts.email.smtp` config.
+- Optional: `alerts.rateLimitReport` aggregates repeated `rateLimit` events into periodic summary alerts.
 - If channel is configured but destination is missing, module throws startup error.
 - Supports templates and field-based rendering.
+
+## Rate-Limit Summary Reports (`alerts.rateLimitReport`)
+
+Use this feature to reduce alert spam from repeated `429` / `rateLimit` decisions.
+
+What it does:
+
+- Collects `rateLimit` events in memory.
+- Groups identical events by `ruleId + ip + method + path + profile`.
+- Sends one periodic summary alert (Slack/Email) instead of many repeated alerts.
+- Can optionally suppress immediate `rateLimit` alerts.
+
+What it does not change:
+
+- `ban`, `block`, and behavior spike alerts (`spike.401`, `spike.404`, `spike.429`, `burst`, etc.) are still sent normally.
+
+Notes:
+
+- If `alerts.rateLimitReport` is omitted, this feature is disabled (default behavior remains unchanged).
+- Summary sending requires at least one configured alert channel (`alerts.slack` and/or `alerts.email`).
+- Aggregation is per-process (each app instance/worker sends its own summary).
+
+### Mode selection via `suppressImmediate`
+
+Use one config and switch behavior with `suppressImmediate`:
+
+```ts
+IpsModule.forRoot({
+  alerts: {
+    slack: {
+      webhookUrl: process.env.SLACK_WEBHOOK_URL!,
+    },
+    rateLimitReport: {
+      collect: true,
+      period: '30m',
+      suppressImmediate: true, // set false for hybrid mode
+      maxItems: 50,
+      maxGroups: 2000,
+    },
+  },
+});
+```
+
+How `suppressImmediate` works:
+
+- `suppressImmediate: true` -> summary-only mode (recommended for noisy production APIs)
+  - `rateLimit` alerts are collected and sent only in periodic reports (`period`)
+  - immediate `rateLimit` alerts are suppressed
+- `suppressImmediate: false` -> hybrid mode (immediate alerts + periodic summary)
+  - immediate `rateLimit` alerts are still sent
+  - the same events are also aggregated into periodic reports
+
+Important:
+
+- This flag affects only `rateLimit` alerts.
+- `ban`, `block`, `spike.*`, `burst`, and other non-`rateLimit` alerts are still sent immediately.
+
+### `period` format
+
+- Supports seconds as number or numeric string: `30`, `'30'`
+- Supports duration strings:
+  - `30m` (30 minutes)
+  - `1h` / `10h` (hours)
+  - `1d` (day)
+- Invalid values fallback to `30m`
+
+### Memory control (`maxGroups`)
+
+- `maxGroups` limits how many unique grouped rows are stored in memory during one report window.
+- When limit is reached, oldest groups are evicted first (FIFO) and new groups are accepted.
+- Summary message includes eviction counters when this happens.
+- Report rows are cleared after each summary flush (`period`) and on shutdown flush, so data does not accumulate across windows.
+- Memory usage for this feature is bounded by `maxGroups` (group count), not by total request volume.
+- Repeated events for the same group only increment `count` (they do not create new rows).
+
+Example behavior:
+
+- `maxGroups: 2000`
+- first 2000 unique groups are stored in the current window
+- group #2001 arrives -> oldest stored group is removed, new group is added
+- at next summary flush, all current rows are sent/cleared and a new window starts
 
 ## Security Notes (Direct Access, Spoofing)
 
@@ -291,7 +374,43 @@ IpsModule.forRoot({
 });
 ```
 
-### Example 6: Spikes and profile behavior
+### Example 6: Periodic rate-limit summary reports
+
+Required fields:
+- none (feature is disabled unless `alerts.rateLimitReport` is configured with `collect: true` or `enabled: true`).
+
+Optional fields:
+- `alerts.rateLimitReport.collect`
+- `alerts.rateLimitReport.enabled` (alias of `collect`)
+- `alerts.rateLimitReport.period`
+- `alerts.rateLimitReport.suppressImmediate`
+- `alerts.rateLimitReport.maxItems`
+- `alerts.rateLimitReport.maxGroups`
+
+Defaults (when enabled):
+- `period: 1800` seconds (`30m`)
+- `suppressImmediate: true`
+- `maxItems: 50`
+- `maxGroups: 2000`
+
+```ts
+IpsModule.forRoot({
+  alerts: {
+    slack: {
+      webhookUrl: process.env.SLACK_WEBHOOK_URL!,
+    },
+    rateLimitReport: {
+      collect: true,
+      period: '30m',
+      suppressImmediate: true,
+      maxItems: 50,
+      maxGroups: 2000,
+    },
+  },
+});
+```
+
+### Example 7: Spikes and profile behavior
 
 Required fields:
 - none (behavior has defaults per profile).
@@ -413,6 +532,14 @@ import {
           textTemplate:
             'action={{action}} mode={{mode}}\nip={{ip}} method={{method}} path={{path}}\nrule={{ruleId}} severity={{severity}}\nmessage={{message}}\ncounts={{countsJson}}\nts={{tsIso}}',
         },
+        // Optional periodic summary for repeated rate-limit alerts (429 spam reduction)
+        // rateLimitReport: {
+        //   collect: true,
+        //   period: '30m',
+        //   suppressImmediate: true,
+        //   maxItems: 50,
+        //   maxGroups: 2000,
+        // },
       },
     }),
   ],
@@ -497,7 +624,7 @@ What it is for:
 
 What problem it solves:
 
-- Adds route/class tags into IPS context for rule matching, logs, and alert triage.
+- Adds route/class tags into IPS request context for custom logic and future rule extensions.
 
 Example:
 
@@ -510,7 +637,12 @@ status() {}
 What it is for:
 
 - Group detections by feature/domain.
-- Add context for alerts and rule decisions.
+- Mark routes with domain-specific metadata (for custom integrations or future tag-based rules).
+
+Current built-in behavior:
+
+- Tags are attached to IPS request context by `IpsGuard`.
+- Built-in rules/alerts/logs do not yet use tags directly.
 
 ## Excluding Routes From IPS Observation (Example: `/health`)
 

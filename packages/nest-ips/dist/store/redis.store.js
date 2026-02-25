@@ -3,7 +3,9 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RedisStore = void 0;
 const memory_store_1 = require("./memory.store");
 const redis_client_1 = require("./redis.client");
+/** Redis store with optional fallback to `MemoryStore` when configured in `auto` mode. */
 class RedisStore {
+    /** Creates Redis-backed store and optional memory fallback. */
     constructor(options) {
         this.lastConnectionErrorLogAt = 0;
         this.lastConnectionErrorMessage = '';
@@ -21,9 +23,11 @@ class RedisStore {
             this.logConnectionError(message);
         });
     }
+    /** Reads key from Redis or fallback store. */
     async get(key) {
         return this.runRedis(() => this.redis.get(this.k(key)), () => this.fallbackGet(key));
     }
+    /** Writes key to Redis or fallback store. */
     async set(key, value, ttlSec) {
         await this.runRedis(async () => {
             const redisKey = this.k(key);
@@ -34,11 +38,13 @@ class RedisStore {
             await this.redis.set(redisKey, value);
         }, () => this.fallbackSet(key, value, ttlSec));
     }
+    /** Deletes key from Redis or fallback store. */
     async del(key) {
         await this.runRedis(async () => {
             await this.redis.del(this.k(key));
         }, () => this.fallbackDel(key));
     }
+    /** Increments counter in Redis pipeline or fallback store. */
     async incr(key, windowSec) {
         return this.runRedis(async () => {
             const redisKey = this.k(key);
@@ -47,6 +53,7 @@ class RedisStore {
             return Number(count ?? 0);
         }, () => this.fallbackIncr(key, windowSec));
     }
+    /** Adds member to Redis set and returns cardinality (or fallback equivalent). */
     async sadd(key, value, ttlSec) {
         return this.runRedis(async () => {
             const redisKey = this.k(key);
@@ -55,6 +62,7 @@ class RedisStore {
             return Number(count ?? 0);
         }, () => this.fallbackSadd(key, value, ttlSec));
     }
+    /** Closes Redis connection and prevents further operations. */
     async close() {
         if (this.closed) {
             return;
@@ -74,6 +82,7 @@ class RedisStore {
             }
         }
     }
+    /** Validates store readiness (used by `IpsRuntime.startup()`). */
     async ready() {
         try {
             await this.ensureConnected();

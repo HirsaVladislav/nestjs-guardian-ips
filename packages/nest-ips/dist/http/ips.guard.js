@@ -24,6 +24,7 @@ let IpsGuard = class IpsGuard {
         this.reflector = reflector;
         this.runtime = runtime;
     }
+    /** Runs guard-level IPS checks for HTTP requests and throws Nest HTTP exceptions on block decisions. */
     async canActivate(context) {
         if (context.getType() !== 'http') {
             return true;
@@ -60,7 +61,9 @@ let IpsGuard = class IpsGuard {
 };
 exports.IpsGuard = IpsGuard;
 exports.IpsGuard = IpsGuard = __decorate([
-    (0, common_1.Injectable)(),
+    (0, common_1.Injectable)()
+    /** Global/class/route guard that executes profile checks, CIDR policy, rules and profile rate limits. */
+    ,
     __param(1, (0, common_1.Optional)()),
     __metadata("design:paramtypes", [core_1.Reflector,
         runtime_1.IpsRuntime])

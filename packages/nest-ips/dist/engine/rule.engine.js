@@ -4,6 +4,7 @@ exports.RuleEngine = void 0;
 const node_fs_1 = require("node:fs");
 const node_path_1 = require("node:path");
 const matchers_1 = require("./matchers");
+/** Loads and matches IPS rules from file and/or inline config. */
 class RuleEngine {
     constructor(options, logger) {
         this.options = options;
@@ -11,9 +12,11 @@ class RuleEngine {
         this.rules = [];
         this.rules = this.loadRules();
     }
+    /** Returns currently loaded rule set. */
     getRules() {
         return this.rules;
     }
+    /** Returns all enabled rules matching the provided context. */
     match(ctx) {
         const out = [];
         for (const rule of this.rules) {

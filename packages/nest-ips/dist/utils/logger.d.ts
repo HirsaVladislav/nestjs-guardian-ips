@@ -1,4 +1,5 @@
 import { LoggerPort } from './logger.interface';
+/** Default console logger used when custom `logger` option is not provided. */
 export declare class IpsLogger implements LoggerPort {
     private readonly scope;
     constructor(scope?: string);

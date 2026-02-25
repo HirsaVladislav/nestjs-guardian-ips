@@ -11,6 +11,7 @@ interface SmtpConfig {
     textTemplate?: string;
     fields?: AlertTemplateField[];
 }
+/** SMTP email alerter implemented via `nodemailer`. */
 export declare class EmailSmtpAlerter implements Alerter {
     private readonly config;
     private transporter;
@@ -18,6 +19,7 @@ export declare class EmailSmtpAlerter implements Alerter {
     private readonly textTemplate?;
     private readonly fields;
     constructor(config: SmtpConfig);
+    /** Sends one alert email to configured recipients. */
     send(event: AlertEvent): Promise<void>;
     private createTransporter;
 }

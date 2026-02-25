@@ -1,3 +1,4 @@
+/** Minimal Redis MULTI pipeline contract used by `RedisStore`. */
 export interface RedisMultiPort {
   incr(key: string): RedisMultiPort;
   expire(key: string, seconds: number): RedisMultiPort;
@@ -6,6 +7,7 @@ export interface RedisMultiPort {
   exec(): Promise<unknown[]>;
 }
 
+/** Minimal Redis client contract (compatible with the `redis` package client). */
 export interface RedisClientPort {
   readonly isOpen: boolean;
   readonly isReady: boolean;
@@ -38,6 +40,7 @@ interface NodeRedisModule {
   }): RedisClientPort;
 }
 
+/** Creates a Node Redis client with conservative IPS-friendly connection options. */
 export function createNodeRedisClient(url: string, connectTimeoutMs: number): RedisClientPort {
   const redisLib = require('redis') as NodeRedisModule;
   return redisLib.createClient({
@@ -49,4 +52,3 @@ export function createNodeRedisClient(url: string, connectTimeoutMs: number): Re
     },
   });
 }
-

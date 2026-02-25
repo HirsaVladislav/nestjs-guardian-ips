@@ -2,6 +2,7 @@ import { Rule } from '../module/options';
 import { isIpInCidr } from '../utils/ip';
 import { applyNormalization } from './normalize';
 
+/** Rule matching context built from normalized request data. */
 export interface MatchContext {
   ip: string;
   path: string;
@@ -13,6 +14,7 @@ export interface MatchContext {
   body?: unknown;
 }
 
+/** Evaluates `rule.when` preconditions (method/profile/path gates). */
 export function matchesWhen(rule: Rule, ctx: MatchContext): boolean {
   if (!rule.when) {
     return true;
@@ -49,6 +51,7 @@ export function matchesWhen(rule: Rule, ctx: MatchContext): boolean {
   return true;
 }
 
+/** Evaluates all `rule.match` clauses against the request context. */
 export function matchesAll(rule: Rule, ctx: MatchContext): boolean {
   const path = applyNormalization(ctx.path, rule.normalize);
   const ua = applyNormalization(ctx.ua, rule.normalize);

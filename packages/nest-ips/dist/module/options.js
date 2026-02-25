@@ -2,7 +2,9 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_PROFILES = exports.DEFAULT_CHEAP_SIGNATURE_PATTERNS = exports.DEFAULT_CLIENT_IP_HEADERS = exports.DEFAULT_MEMORY_CAP_BYTES = void 0;
 exports.resolveIpsOptions = resolveIpsOptions;
+/** Default memory cap for built-in `MemoryStore` (500 MB). */
 exports.DEFAULT_MEMORY_CAP_BYTES = 500 * 1024 * 1024;
+/** Default header priority order used for client IP extraction. */
 exports.DEFAULT_CLIENT_IP_HEADERS = [
     'cf-connecting-ip',
     'true-client-ip',
@@ -11,6 +13,7 @@ exports.DEFAULT_CLIENT_IP_HEADERS = [
     'forwarded',
     'x-real-ip',
 ];
+/** Default cheap-signature path fragments used by middleware prefilter. */
 exports.DEFAULT_CHEAP_SIGNATURE_PATTERNS = [
     '/.env',
     '/.git',
@@ -27,6 +30,7 @@ exports.DEFAULT_CHEAP_SIGNATURE_PATTERNS = [
     '%2e%2e%2f',
     '%2e%2e\\',
 ];
+/** Default profile policies applied when user config omits profile overrides. */
 exports.DEFAULT_PROFILES = {
     default: {
         rateLimit: { key: 'ip', windowSec: 60, max: 120 },
@@ -49,6 +53,7 @@ exports.DEFAULT_PROFILES = {
         behavior: { windowSec: 60, max404: 10, max401: 8, max429: 8, maxReq: 80, maxUniqueUsernames: 5 },
     },
 };
+/** Validates and normalizes user config into runtime-ready options. */
 function resolveIpsOptions(input = {}) {
     const slack = input.alerts?.slack;
     const slackConfigured = Boolean(slack);
@@ -63,6 +68,7 @@ function resolveIpsOptions(input = {}) {
     if (emailConfigured && emailEnabled && !emailHasSmtp) {
         throw new Error('[nest-ips] alerts.email.smtp.{host,port,user,pass,from,to[]} is required when alerts.email is configured');
     }
+    const rateLimitReport = resolveRateLimitReportOptions(input.alerts?.rateLimitReport);
     const cheapPatterns = input.cheapSignatures?.patterns ?? exports.DEFAULT_CHEAP_SIGNATURE_PATTERNS;
     const cheapSignaturesEnabled = input.cheapSignatures?.enabled ?? true;
     const clientIp = resolveClientIpOptions(input);
@@ -83,6 +89,7 @@ function resolveIpsOptions(input = {}) {
         alerts: {
             slack: slack ? { ...slack, enabled: slackEnabled } : undefined,
             email: email ? { ...email, enabled: emailEnabled } : undefined,
+            rateLimitReport,
         },
         privacy: {
             include: input.privacy?.include ?? [
@@ -116,6 +123,22 @@ function resolveEnabled(explicit, hasParams) {
         return explicit;
     }
     return hasParams;
+}
+function resolveRateLimitReportOptions(input) {
+    if (!input) {
+        return undefined;
+    }
+    const enabled = input.collect ?? input.enabled ?? false;
+    const periodSec = normalizeDurationSec(input.period, 1800);
+    const maxItems = normalizePositiveInt(input.maxItems, 50);
+    const maxGroups = normalizePositiveInt(input.maxGroups, 2000);
+    return {
+        enabled,
+        suppressImmediate: input.suppressImmediate ?? true,
+        maxItems,
+        maxGroups,
+        periodSec,
+    };
 }
 function resolveClientIpOptions(input) {
     const next = input.clientIp;
@@ -164,6 +187,39 @@ function normalizeHops(value) {
         return 1;
     }
     return Math.max(0, Math.floor(value));
+}
+function normalizeDurationSec(value, fallbackSec) {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        return Math.max(1, Math.floor(value));
+    }
+    if (typeof value !== 'string') {
+        return fallbackSec;
+    }
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+        return fallbackSec;
+    }
+    const numeric = Number(trimmed);
+    if (Number.isFinite(numeric) && numeric > 0) {
+        return Math.max(1, Math.floor(numeric));
+    }
+    const match = trimmed.match(/^(\d+)\s*(s|m|h|d)$/);
+    if (!match) {
+        return fallbackSec;
+    }
+    const amount = Number(match[1]);
+    const unit = match[2];
+    const factor = unit === 's' ? 1 :
+        unit === 'm' ? 60 :
+            unit === 'h' ? 3600 :
+                86400;
+    return Math.max(1, amount * factor);
+}
+function normalizePositiveInt(value, fallback) {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return fallback;
+    }
+    return Math.max(1, Math.floor(value));
 }
 function hasValidEmailSmtp(smtp) {
     if (!smtp) {

@@ -13,6 +13,7 @@ interface RequestLike {
   url?: string;
 }
 
+/** Reads a request header by name using case-insensitive lookup. */
 export function getHeader(req: RequestLike, name: string): string | undefined {
   const headers = req.headers ?? {};
   const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
@@ -26,6 +27,7 @@ export function getHeader(req: RequestLike, name: string): string | undefined {
   return value;
 }
 
+/** Resolves client IP according to configured trust model (`strict` or `hops`). */
 export function extractClientIp(req: RequestLike, options: IpsResolvedOptions): string {
   const remoteIp = extractRemoteIp(req);
   const config = options.clientIp;
@@ -49,16 +51,19 @@ export function extractClientIp(req: RequestLike, options: IpsResolvedOptions): 
   return '0.0.0.0';
 }
 
+/** Extracts request path without query string. */
 export function extractPath(req: RequestLike): string {
   const candidate = req.originalUrl ?? req.url ?? req.path ?? '/';
   const noQuery = candidate.split('?')[0] ?? '/';
   return noQuery || '/';
 }
 
+/** Extracts uppercase HTTP method with `GET` fallback. */
 export function extractMethod(req: RequestLike): string {
   return (req.method ?? 'GET').toUpperCase();
 }
 
+/** Converts IPv4-mapped IPv6 format (`::ffff:x.x.x.x`) to plain IPv4 string. */
 export function stripIpv6Prefix(ip: string): string {
   if (ip.startsWith('::ffff:')) {
     return ip.slice(7);
@@ -66,6 +71,7 @@ export function stripIpv6Prefix(ip: string): string {
   return ip;
 }
 
+/** Checks whether an IP belongs to CIDR (or equals a plain IP string). */
 export function isIpInCidr(ip: string, cidr: string): boolean {
   const normalizedIp = normalizeIpCandidate(ip);
   if (!normalizedIp) {

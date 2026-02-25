@@ -1,6 +1,7 @@
 import { BehaviorPolicy, ProfilePolicy } from '../module/options';
 import { Store } from '../store/store.interface';
 
+/** Secondary behavior detection signal emitted from counters (burst/spikes/stuffing). */
 export interface BehaviorSignal {
   id: 'spike.404' | 'spike.401' | 'spike.429' | 'stuffing' | 'burst' | 'route-not-found';
   message: string;
@@ -8,9 +9,11 @@ export interface BehaviorSignal {
   severity: 'medium' | 'high' | 'critical';
 }
 
+/** Tracks behavior counters and emits signals when profile thresholds are exceeded. */
 export class BehaviorDetectors {
   constructor(private readonly store: Store) {}
 
+  /** Records a request for burst detection. */
   async recordRequest(ip: string, profile: ProfilePolicy): Promise<BehaviorSignal[]> {
     const behavior = this.normalizeBehavior(profile.behavior);
     const burst = await this.store.incr(`behavior:burst:${ip}`, behavior.windowSec);
@@ -29,6 +32,7 @@ export class BehaviorDetectors {
     return [];
   }
 
+  /** Records response status for auth/404/429 spike detection. */
   async recordStatus(ip: string, status: number, profile: ProfilePolicy): Promise<BehaviorSignal[]> {
     const behavior = this.normalizeBehavior(profile.behavior);
     const signals: BehaviorSignal[] = [];
@@ -72,6 +76,7 @@ export class BehaviorDetectors {
     return signals;
   }
 
+  /** Tracks unique usernames per IP to detect credential stuffing. */
   async recordStuffing(ip: string, username: string | undefined, profile: ProfilePolicy): Promise<BehaviorSignal[]> {
     if (!username) {
       return [];
@@ -94,6 +99,7 @@ export class BehaviorDetectors {
     return [];
   }
 
+  /** Tracks route-not-found bursts separately from application 404 responses. */
   async recordRouteNotFound(ip: string, windowSec: number, max: number): Promise<BehaviorSignal[]> {
     const count = await this.store.incr(`behavior:route404:${ip}`, windowSec);
 

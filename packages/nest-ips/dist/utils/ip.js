@@ -7,6 +7,7 @@ exports.extractMethod = extractMethod;
 exports.stripIpv6Prefix = stripIpv6Prefix;
 exports.isIpInCidr = isIpInCidr;
 const node_net_1 = require("node:net");
+/** Reads a request header by name using case-insensitive lookup. */
 function getHeader(req, name) {
     const headers = req.headers ?? {};
     const key = Object.keys(headers).find((k) => k.toLowerCase() === name.toLowerCase());
@@ -19,6 +20,7 @@ function getHeader(req, name) {
     }
     return value;
 }
+/** Resolves client IP according to configured trust model (`strict` or `hops`). */
 function extractClientIp(req, options) {
     const remoteIp = extractRemoteIp(req);
     const config = options.clientIp;
@@ -39,20 +41,24 @@ function extractClientIp(req, options) {
     }
     return '0.0.0.0';
 }
+/** Extracts request path without query string. */
 function extractPath(req) {
     const candidate = req.originalUrl ?? req.url ?? req.path ?? '/';
     const noQuery = candidate.split('?')[0] ?? '/';
     return noQuery || '/';
 }
+/** Extracts uppercase HTTP method with `GET` fallback. */
 function extractMethod(req) {
     return (req.method ?? 'GET').toUpperCase();
 }
+/** Converts IPv4-mapped IPv6 format (`::ffff:x.x.x.x`) to plain IPv4 string. */
 function stripIpv6Prefix(ip) {
     if (ip.startsWith('::ffff:')) {
         return ip.slice(7);
     }
     return ip;
 }
+/** Checks whether an IP belongs to CIDR (or equals a plain IP string). */
 function isIpInCidr(ip, cidr) {
     const normalizedIp = normalizeIpCandidate(ip);
     if (!normalizedIp) {

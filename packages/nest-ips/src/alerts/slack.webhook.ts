@@ -2,6 +2,7 @@ import { request } from 'node:https';
 import { AlertEvent, Alerter, AlertTemplateField } from './alerter.interface';
 import { renderAlertFields, renderAlertTemplate, renderAlertTemplateValue } from './template.renderer';
 
+const DEFAULT_SLACK_TIMEOUT_MS = 5000;
 const DEFAULT_SLACK_FIELDS: AlertTemplateField[] = [
   'actionUpper',
   'mode',
@@ -21,6 +22,7 @@ interface SlackWebhookConfig {
   payloadIncludeText?: boolean;
 }
 
+/** Slack webhook alerter with text or payload-template rendering support. */
 export class SlackWebhookAlerter implements Alerter {
   private readonly webhookUrl: string;
   private readonly template?: string;
@@ -43,6 +45,7 @@ export class SlackWebhookAlerter implements Alerter {
     this.payloadIncludeText = config.payloadIncludeText ?? true;
   }
 
+  /** Sends alert event to Slack Incoming Webhook endpoint. */
   async send(event: AlertEvent): Promise<void> {
     if (!this.webhookUrl) {
       return;
@@ -66,6 +69,7 @@ export class SlackWebhookAlerter implements Alerter {
           },
         },
         (res) => {
+          res.resume();
           const status = res.statusCode ?? 500;
           if (status >= 200 && status < 300) {
             resolve();
@@ -76,6 +80,9 @@ export class SlackWebhookAlerter implements Alerter {
       );
 
       req.on('error', reject);
+      req.setTimeout(DEFAULT_SLACK_TIMEOUT_MS, () => {
+        req.destroy(new Error(`Slack webhook timed out after ${DEFAULT_SLACK_TIMEOUT_MS}ms`));
+      });
       req.write(body);
       req.end();
     });
