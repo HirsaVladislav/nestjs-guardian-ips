@@ -24,6 +24,7 @@ export declare class IpsRuntime {
     private rateLimitReportFlushing;
     private rateLimitReportEvictedGroups;
     private rateLimitReportEvictedEvents;
+    private readonly rateLimitReportIpIntelCache;
     /** Creates runtime and resolves normalized options, store, rules and alert transports. */
     constructor(input?: IpsModuleOptions);
     /** Returns normalized runtime options (useful for diagnostics and tests). */
@@ -63,6 +64,14 @@ export declare class IpsRuntime {
     private collectAlertReport;
     private flushRateLimitReport;
     private resetRateLimitReportWindow;
+    private resolveRateLimitReportIpIntel;
+    private resolveIpIntel;
+    private upsertIpIntelCache;
+    private withTimeout;
+    private normalizeIpIntel;
+    private formatIpIntel;
+    private safeText;
+    private safeScore;
     private rateLimitReportConfig;
     private resolveStore;
     private resolveAlerter;

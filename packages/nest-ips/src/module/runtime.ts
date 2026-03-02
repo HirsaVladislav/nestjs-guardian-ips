@@ -8,8 +8,10 @@ import { DecisionEngine, DecisionResult } from '../engine/decision.engine';
 import { MatchContext } from '../engine/matchers';
 import { RuleEngine } from '../engine/rule.engine';
 import {
+  IpsIpIntelResult,
   IpsModuleOptions,
   IpsProfileName,
+  IpsResolvedRateLimitReportIpIntelOptions,
   IpsResolvedRateLimitReportOptions,
   IpsResolvedOptions,
   ProfilePolicy,
@@ -44,6 +46,11 @@ interface RateLimitReportRow {
   count: number;
 }
 
+interface RateLimitReportIpIntelCacheEntry {
+  value: IpsIpIntelResult | null;
+  expiresAtMs: number;
+}
+
 /** Core IPS/IDS runtime orchestrating stores, rules, behavior detectors and alert channels. */
 export class IpsRuntime {
   private readonly logger: LoggerPort;
@@ -61,6 +68,7 @@ export class IpsRuntime {
   private rateLimitReportFlushing = false;
   private rateLimitReportEvictedGroups = 0;
   private rateLimitReportEvictedEvents = 0;
+  private readonly rateLimitReportIpIntelCache = new Map<string, RateLimitReportIpIntelCacheEntry>();
 
   /** Creates runtime and resolves normalized options, store, rules and alert transports. */
   constructor(input: IpsModuleOptions = {}) {
@@ -729,9 +737,10 @@ export class IpsRuntime {
       const omitted = Math.max(0, this.rateLimitReportRows.size - rows.length);
       const windowStartedAt = this.rateLimitReportWindowStartedAtMs;
       const periodSec = config.periodSec;
+      const ipIntelByIp = await this.resolveRateLimitReportIpIntel(rows, config.ipIntel);
 
       const lines = rows.map((row, index) =>
-        `${index + 1}. count=${row.count} source=${row.source} action=${row.action} ip=${row.ip} ${row.method} ${row.path} rule=${row.ruleId} profile=${row.profile}`,
+        `${index + 1}. count=${row.count} source=${row.source} action=${row.action} ip=${row.ip} ${row.method} ${row.path} rule=${row.ruleId} profile=${row.profile}${this.formatIpIntel(ipIntelByIp.get(row.ip))}`,
       );
       if (omitted > 0) {
         lines.push(`... omitted ${omitted} more groups`);
@@ -750,6 +759,7 @@ export class IpsRuntime {
         `windowEnd=${new Date(now).toISOString()}`,
         `periodSec=${periodSec}`,
         `scope=${config.scope}`,
+        `ipIntelEnabled=${Boolean(config.ipIntel?.enabled)}`,
         `totalEvents=${this.rateLimitReportTotal}`,
         `uniqueGroups=${this.rateLimitReportRows.size}`,
         ...lines,
@@ -771,6 +781,7 @@ export class IpsRuntime {
           evictedGroups: this.rateLimitReportEvictedGroups,
           evictedEvents: this.rateLimitReportEvictedEvents,
           periodSec,
+          ipIntelRows: ipIntelByIp.size,
         },
         message,
       };
@@ -785,6 +796,8 @@ export class IpsRuntime {
         periodSec,
         scope: config.scope,
         maxGroups: config.maxGroups,
+        ipIntelEnabled: Boolean(config.ipIntel?.enabled),
+        ipIntelRows: ipIntelByIp.size,
       });
     } catch (error) {
       this.logDetection('rate-limit-report-failed', { ip: '*' }, {
@@ -803,6 +816,190 @@ export class IpsRuntime {
     this.rateLimitReportEvictedGroups = 0;
     this.rateLimitReportEvictedEvents = 0;
     this.rateLimitReportWindowStartedAtMs = Date.now();
+  }
+
+  private async resolveRateLimitReportIpIntel(
+    rows: RateLimitReportRow[],
+    config: IpsResolvedRateLimitReportIpIntelOptions | undefined,
+  ): Promise<Map<string, IpsIpIntelResult | null>> {
+    const result = new Map<string, IpsIpIntelResult | null>();
+    if (!config?.enabled || typeof config.resolver !== 'function') {
+      return result;
+    }
+
+    const uniqueIps = Array.from(new Set(rows.map((row) => row.ip))).filter((ip) => ip !== '*');
+    const resolved = await Promise.all(uniqueIps.map(async (ip) => [ip, await this.resolveIpIntel(ip, config)] as const));
+    for (const [ip, intel] of resolved) {
+      result.set(ip, intel);
+    }
+
+    return result;
+  }
+
+  private async resolveIpIntel(
+    ip: string,
+    config: IpsResolvedRateLimitReportIpIntelOptions,
+  ): Promise<IpsIpIntelResult | null> {
+    const now = Date.now();
+    const cached = this.rateLimitReportIpIntelCache.get(ip);
+    if (cached && cached.expiresAtMs > now) {
+      return cached.value;
+    }
+    if (cached) {
+      this.rateLimitReportIpIntelCache.delete(ip);
+    }
+
+    let intel: IpsIpIntelResult | null = null;
+    try {
+      const controller = new AbortController();
+      const resolved = await this.withTimeout(
+        Promise.resolve(config.resolver?.(ip, { signal: controller.signal }) ?? null),
+        config.timeoutMs,
+        () => controller.abort(),
+      );
+      intel = resolved ? this.normalizeIpIntel(resolved) : null;
+    } catch (error) {
+      this.logDetection('ip-intel-failed', { ip }, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+
+    this.upsertIpIntelCache(ip, intel, now + config.cacheTtlSec * 1000, config.maxCacheSize);
+    return intel;
+  }
+
+  private upsertIpIntelCache(
+    ip: string,
+    value: IpsIpIntelResult | null,
+    expiresAtMs: number,
+    maxCacheSize: number,
+  ): void {
+    if (this.rateLimitReportIpIntelCache.has(ip)) {
+      this.rateLimitReportIpIntelCache.delete(ip);
+    }
+    while (this.rateLimitReportIpIntelCache.size >= maxCacheSize) {
+      const oldestKey = this.rateLimitReportIpIntelCache.keys().next().value;
+      if (typeof oldestKey !== 'string') {
+        break;
+      }
+      this.rateLimitReportIpIntelCache.delete(oldestKey);
+    }
+    this.rateLimitReportIpIntelCache.set(ip, { value, expiresAtMs });
+  }
+
+  private async withTimeout<T>(promise: Promise<T>, timeoutMs: number, onTimeout?: () => void): Promise<T> {
+    if (timeoutMs <= 0) {
+      return promise;
+    }
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    try {
+      return await Promise.race([
+        promise,
+        new Promise<T>((_, reject) => {
+          timer = setTimeout(() => {
+            onTimeout?.();
+            reject(new Error(`[nest-ips] ipIntel resolver timeout after ${timeoutMs}ms`));
+          }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timer) {
+        clearTimeout(timer);
+      }
+    }
+  }
+
+  private normalizeIpIntel(input: IpsIpIntelResult): IpsIpIntelResult {
+    return {
+      provider: this.safeText(input.provider),
+      isVpn: typeof input.isVpn === 'boolean' ? input.isVpn : undefined,
+      isProxy: typeof input.isProxy === 'boolean' ? input.isProxy : undefined,
+      isTor: typeof input.isTor === 'boolean' ? input.isTor : undefined,
+      isHosting: typeof input.isHosting === 'boolean' ? input.isHosting : undefined,
+      riskScore: this.safeScore(input.riskScore),
+      countryCode: this.safeText(input.countryCode),
+      countryName: this.safeText(input.countryName),
+      region: this.safeText(input.region),
+      city: this.safeText(input.city),
+      asn: this.safeText(input.asn),
+      org: this.safeText(input.org),
+      isp: this.safeText(input.isp),
+      connectionType: this.safeText(input.connectionType),
+    };
+  }
+
+  private formatIpIntel(input: IpsIpIntelResult | null | undefined): string {
+    if (!input) {
+      return '';
+    }
+
+    const parts: string[] = [];
+    if (typeof input.isVpn === 'boolean') {
+      parts.push(`vpn=${input.isVpn ? 'yes' : 'no'}`);
+    }
+    if (typeof input.isProxy === 'boolean') {
+      parts.push(`proxy=${input.isProxy ? 'yes' : 'no'}`);
+    }
+    if (typeof input.isTor === 'boolean') {
+      parts.push(`tor=${input.isTor ? 'yes' : 'no'}`);
+    }
+    if (typeof input.isHosting === 'boolean') {
+      parts.push(`hosting=${input.isHosting ? 'yes' : 'no'}`);
+    }
+    if (typeof input.riskScore === 'number') {
+      parts.push(`risk=${input.riskScore}`);
+    }
+    if (input.countryCode) {
+      parts.push(`country=${input.countryCode}`);
+    }
+    if (input.countryName) {
+      parts.push(`countryName=${input.countryName}`);
+    }
+    if (input.region) {
+      parts.push(`region=${input.region}`);
+    }
+    if (input.city) {
+      parts.push(`city=${input.city}`);
+    }
+    if (input.asn) {
+      parts.push(`asn=${input.asn}`);
+    }
+    if (input.org) {
+      parts.push(`org=${input.org}`);
+    }
+    if (input.isp) {
+      parts.push(`isp=${input.isp}`);
+    }
+    if (input.connectionType) {
+      parts.push(`connectionType=${input.connectionType}`);
+    }
+    if (input.provider) {
+      parts.push(`provider=${input.provider}`);
+    }
+
+    return parts.length > 0 ? ` intel=[${parts.join(' ')}]` : '';
+  }
+
+  private safeText(value: unknown): string | undefined {
+    if (typeof value !== 'string') {
+      return undefined;
+    }
+    const normalized = value
+      .replace(/[\r\n\t]+/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    if (!normalized) {
+      return undefined;
+    }
+    return normalized.slice(0, 64);
+  }
+
+  private safeScore(value: unknown): number | undefined {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return undefined;
+    }
+    return Math.max(0, Math.min(100, Math.round(value)));
   }
 
   private rateLimitReportConfig(): IpsResolvedRateLimitReportOptions | undefined {
