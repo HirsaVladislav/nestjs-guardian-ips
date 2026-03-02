@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_PROFILES = exports.DEFAULT_CHEAP_SIGNATURE_PATTERNS = exports.DEFAULT_CLIENT_IP_HEADERS = exports.DEFAULT_MEMORY_CAP_BYTES = void 0;
 exports.resolveIpsOptions = resolveIpsOptions;
+const node_https_1 = require("node:https");
 /** Default memory cap for built-in `MemoryStore` (500 MB). */
 exports.DEFAULT_MEMORY_CAP_BYTES = 500 * 1024 * 1024;
 /** Default header priority order used for client IP extraction. */
@@ -133,6 +134,7 @@ function resolveRateLimitReportOptions(input) {
     const periodSec = normalizeDurationSec(input.period, 1800);
     const maxItems = normalizePositiveInt(input.maxItems, 50);
     const maxGroups = normalizePositiveInt(input.maxGroups, 2000);
+    const ipIntel = resolveRateLimitReportIpIntelOptions(input.ipIntel);
     return {
         enabled,
         scope,
@@ -140,7 +142,178 @@ function resolveRateLimitReportOptions(input) {
         maxItems,
         maxGroups,
         periodSec,
+        ipIntel,
     };
+}
+function resolveRateLimitReportIpIntelOptions(input) {
+    if (!input) {
+        return undefined;
+    }
+    const enabled = input.enabled ?? true;
+    const resolver = input.resolver ?? resolveDefaultIpIntelResolver();
+    if (enabled && typeof resolver !== 'function') {
+        throw new Error('[nest-ips] alerts.rateLimitReport.ipIntel.resolver is required when ipIntel is enabled (or set IP_INTEL_TOKEN for default resolver)');
+    }
+    return {
+        enabled,
+        resolver: typeof resolver === 'function' ? resolver : undefined,
+        timeoutMs: normalizePositiveInt(input.timeoutMs, 1500),
+        cacheTtlSec: normalizePositiveInt(input.cacheTtlSec, 3600),
+        maxCacheSize: normalizePositiveInt(input.maxCacheSize, 5000),
+    };
+}
+function resolveDefaultIpIntelResolver() {
+    const token = String(process.env.IP_INTEL_TOKEN ?? '').trim();
+    if (token) {
+        return (ip, context) => defaultIpInfoResolver(ip, token, context?.signal);
+    }
+    return undefined;
+}
+async function defaultIpInfoResolver(ip, token, signal) {
+    const url = `https://api.ipinfo.io/lookup/${encodeURIComponent(ip)}?token=${encodeURIComponent(token)}`;
+    const payload = await fetchJson(url, signal);
+    if (!payload) {
+        return null;
+    }
+    const anonymous = asRecord(payload.anonymous) ?? asRecord(payload.privacy);
+    const asnMeta = asRecord(payload.as);
+    const result = {
+        provider: 'ipinfo',
+        isVpn: toBoolean(anonymous?.is_vpn ?? anonymous?.vpn),
+        isProxy: toBoolean(anonymous?.is_proxy ?? anonymous?.proxy),
+        isTor: toBoolean(anonymous?.is_tor ?? anonymous?.tor),
+        isHosting: toBoolean(payload.is_hosting ?? anonymous?.is_hosting ?? anonymous?.hosting),
+        riskScore: toNumber(payload.risk_score ?? payload.fraud_score),
+        countryCode: toText(payload.country_code ?? payload.country),
+        countryName: toText(payload.country_name),
+        region: toText(payload.region),
+        city: toText(payload.city),
+        asn: toText(asnMeta?.asn ?? payload.asn),
+        org: toText(asnMeta?.name ?? payload.org),
+        isp: toText(payload.isp),
+        connectionType: toText(payload.connection_type),
+    };
+    return hasAnyIntelValue(result) ? result : null;
+}
+const MAX_IP_INTEL_RESPONSE_BYTES = 512 * 1024;
+function fetchJson(urlValue, signal) {
+    return new Promise((resolve) => {
+        let settled = false;
+        const finish = (value) => {
+            if (settled) {
+                return;
+            }
+            settled = true;
+            resolve(value);
+        };
+        const url = new URL(urlValue);
+        const req = (0, node_https_1.request)({
+            method: 'GET',
+            hostname: url.hostname,
+            path: `${url.pathname}${url.search}`,
+            port: url.port || 443,
+        }, (res) => {
+            const status = res.statusCode ?? 500;
+            let body = '';
+            let bytes = 0;
+            res.setEncoding('utf8');
+            res.on('data', (chunk) => {
+                bytes += Buffer.byteLength(chunk, 'utf8');
+                if (bytes > MAX_IP_INTEL_RESPONSE_BYTES) {
+                    req.destroy(new Error(`[nest-ips] ipIntel response exceeds ${MAX_IP_INTEL_RESPONSE_BYTES} bytes`));
+                    finish(null);
+                    return;
+                }
+                body += chunk;
+            });
+            res.on('end', () => {
+                if (status < 200 || status >= 300) {
+                    finish(null);
+                    return;
+                }
+                try {
+                    const parsed = JSON.parse(body);
+                    finish(asRecord(parsed));
+                }
+                catch {
+                    finish(null);
+                }
+            });
+        });
+        if (signal) {
+            if (signal.aborted) {
+                req.destroy();
+                finish(null);
+                return;
+            }
+            const onAbort = () => {
+                req.destroy();
+                finish(null);
+            };
+            signal.addEventListener('abort', onAbort, { once: true });
+            req.on('close', () => signal.removeEventListener('abort', onAbort));
+        }
+        req.on('error', () => finish(null));
+        req.end();
+    });
+}
+function asRecord(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+        return null;
+    }
+    return input;
+}
+function toText(value) {
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const next = value.trim();
+    return next ? next : undefined;
+}
+function toBoolean(value) {
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value !== 0;
+    }
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true' || normalized === '1' || normalized === 'yes') {
+        return true;
+    }
+    if (normalized === 'false' || normalized === '0' || normalized === 'no') {
+        return false;
+    }
+    return undefined;
+}
+function toNumber(value) {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+        return value;
+    }
+    if (typeof value !== 'string') {
+        return undefined;
+    }
+    const parsed = Number(value.trim());
+    return Number.isFinite(parsed) ? parsed : undefined;
+}
+function hasAnyIntelValue(input) {
+    return Boolean(input.provider ||
+        typeof input.isVpn === 'boolean' ||
+        typeof input.isProxy === 'boolean' ||
+        typeof input.isTor === 'boolean' ||
+        typeof input.isHosting === 'boolean' ||
+        typeof input.riskScore === 'number' ||
+        input.countryCode ||
+        input.countryName ||
+        input.region ||
+        input.city ||
+        input.asn ||
+        input.org ||
+        input.isp ||
+        input.connectionType);
 }
 function resolveClientIpOptions(input) {
     const next = input.clientIp;

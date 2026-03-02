@@ -163,6 +163,77 @@ export interface IpsRateLimitReportOptions {
      * When full, the oldest groups are evicted first (FIFO).
      */
     maxGroups?: number;
+    /**
+     * Optional IP intelligence enrichment for summary rows.
+     * Adds context such as VPN/proxy/TOR/hosting/risk/geo/ASN to grouped IP entries.
+     * This helps distinguish likely bot/infrastructure traffic from regular user traffic.
+     */
+    ipIntel?: IpsRateLimitReportIpIntelOptions;
+}
+/**
+ * Normalized IP intelligence result returned by `ipIntel.resolver`.
+ * Keep only fields you need; missing fields are simply not shown in reports.
+ */
+export interface IpsIpIntelResult {
+    provider?: string;
+    isVpn?: boolean;
+    isProxy?: boolean;
+    isTor?: boolean;
+    isHosting?: boolean;
+    riskScore?: number;
+    countryCode?: string;
+    countryName?: string;
+    region?: string;
+    city?: string;
+    asn?: string;
+    org?: string;
+    isp?: string;
+    connectionType?: string;
+}
+/**
+ * IP intelligence settings for periodic summary reports.
+ * Use this when you need additional signal about offending IPs (VPN/proxy/data-center/risk).
+ */
+export interface IpsRateLimitReportIpIntelOptions {
+    /**
+     * Enables IP enrichment for summary rows.
+     * If omitted, defaults to `true` when `ipIntel` object is provided.
+     */
+    enabled?: boolean;
+    /**
+     * Custom async resolver that returns VPN/proxy/hosting intelligence for an IP.
+     * Required when `enabled` is `true`, unless built-in default resolver is used via `IP_INTEL_TOKEN`.
+     * Optional `context.signal` is provided so resolvers can cancel outgoing requests on timeout.
+     */
+    resolver?: (ip: string, context?: {
+        signal?: AbortSignal;
+    }) => Promise<IpsIpIntelResult | null> | IpsIpIntelResult | null;
+    /**
+     * Maximum time (ms) allowed for one resolver call before timeout.
+     * Default: `1500`.
+     */
+    timeoutMs?: number;
+    /**
+     * Cache TTL for resolved IP intelligence records.
+     * Default: `3600`.
+     */
+    cacheTtlSec?: number;
+    /**
+     * Maximum number of cached IP intelligence entries in memory.
+     * When full, the oldest cache entries are evicted first (FIFO).
+     * Default: `5000`.
+     */
+    maxCacheSize?: number;
+}
+/** Normalized internal IP enrichment settings for report rows. */
+export interface IpsResolvedRateLimitReportIpIntelOptions {
+    enabled: boolean;
+    resolver?: (ip: string, context?: {
+        signal?: AbortSignal;
+    }) => Promise<IpsIpIntelResult | null> | IpsIpIntelResult | null;
+    timeoutMs: number;
+    cacheTtlSec: number;
+    maxCacheSize: number;
 }
 /** Normalized internal rate-limit report configuration. */
 export interface IpsResolvedRateLimitReportOptions {
@@ -172,6 +243,7 @@ export interface IpsResolvedRateLimitReportOptions {
     suppressImmediate: boolean;
     maxItems: number;
     maxGroups: number;
+    ipIntel?: IpsResolvedRateLimitReportIpIntelOptions;
 }
 /** Alert channels and alert-related features. */
 export interface IpsAlertsOptions {

@@ -10,6 +10,7 @@ Application-level IDS/IPS for NestJS APIs.
 - Supports multi-worker/shared state via Redis and local mode via memory store.
 - Sends security alerts to Slack and email with customizable templates.
 - Can aggregate repeated `rateLimit` alerts into periodic summary reports (`alerts.rateLimitReport`) to reduce alert spam.
+- Can enrich summary rows with VPN/proxy/hosting intelligence via built-in or custom `ipIntel.resolver`.
 
 ## Install
 
@@ -96,7 +97,7 @@ store: {
 
 - Slack: requires `alerts.slack.webhookUrl`.
 - Email: requires full `alerts.email.smtp` config.
-- Optional: `alerts.rateLimitReport` aggregates repeated `rateLimit` events into periodic summary alerts.
+- Optional: `alerts.rateLimitReport` aggregates repeated `rateLimit` events (or all IPS alert events with `scope: 'all'`) into periodic summary alerts.
 - If channel is configured but destination is missing, module throws startup error.
 - Supports templates and field-based rendering.
 
@@ -203,6 +204,88 @@ Example behavior:
 - first 2000 unique groups are stored in the current window
 - group #2001 arrives -> oldest stored group is removed, new group is added
 - at next summary flush, all current rows are sent/cleared and a new window starts
+
+### IP intelligence in reports (`ipIntel`)
+
+By default, `ipIntel` can work with a built-in resolver (no custom function needed).
+It is used when:
+
+- `ipIntel.enabled = true`
+- `ipIntel.resolver` is not provided
+- default provider key exists in env
+
+Built-in resolver env:
+
+- `IP_INTEL_TOKEN` (built-in resolver key)
+
+Built-in provider is `IPinfo`.
+If you want another provider, use custom `resolver`.
+
+If you want full control over fields and provider logic, use custom `resolver`:
+
+```ts
+IpsModule.forRoot({
+  alerts: {
+    slack: { webhookUrl: process.env.SLACK_WEBHOOK_URL! },
+    rateLimitReport: {
+      enabled: true,
+      scope: 'all',
+      period: '30m',
+      suppressImmediate: true,
+      ipIntel: {
+        enabled: true,
+        resolver: async (ip, context) => {
+          // Example only: plug in your provider/client here
+          // and map response to nest-ips format.
+          // `context?.signal` can be used to cancel outgoing request on timeout.
+          return {
+            provider: 'my-ip-intel',
+            isVpn: false,
+            isProxy: false,
+            isTor: false,
+            isHosting: false,
+            riskScore: 7,
+            countryCode: 'US',
+            countryName: 'United States',
+            region: 'Virginia',
+            city: 'Ashburn',
+            asn: 'AS14618',
+            org: 'Amazon.com, Inc.',
+            isp: 'Amazon',
+            connectionType: 'hosting',
+          };
+        },
+      },
+    },
+  },
+});
+```
+
+Notes:
+
+- `ipIntel` is optional and disabled unless configured.
+- Reliable VPN/proxy detection requires external IP intelligence data (provider or local DB).
+- Resolver calls are cached in memory (`cacheTtlSec`, `maxCacheSize`) and timeout-protected (`timeoutMs`).
+- If `ipIntel.enabled=true` and `resolver` is omitted, package tries built-in default resolver via env credentials.
+- Default values (can be omitted): `timeoutMs=1500`, `cacheTtlSec=3600`, `maxCacheSize=5000`.
+- Built-in resolver safety: provider response size is limited to `512KB`.
+
+Resolver return shape (`IpsIpIntelResult`) supports:
+
+- `provider`
+- `isVpn`
+- `isProxy`
+- `isTor`
+- `isHosting`
+- `riskScore`
+- `countryCode`
+- `countryName`
+- `region`
+- `city`
+- `asn`
+- `org`
+- `isp`
+- `connectionType`
 
 ## Security Notes (Direct Access, Spoofing)
 
